@@ -62,7 +62,7 @@ export class PsiloStack extends cdk.Stack {
     const userPoolClient = new cognito.UserPoolClient(this, "UserPoolClient", {
       userPool,
       authFlows: {
-        userSrp: true,
+        userPassword: true,
       },
       generateSecret: false,
     });
