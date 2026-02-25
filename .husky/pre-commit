@@ -1,0 +1,7 @@
+npx lint-staged
+
+if git diff --cached --quiet -- frontend/; then
+  echo "No frontend changes, skipping build."
+else
+  cd frontend && npx tsc --noEmit && npx next build
+fi
