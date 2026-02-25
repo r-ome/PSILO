@@ -1,41 +1,74 @@
-# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+# ===========================
+# Dependencies
+# ===========================
+node_modules/
+.pnp
+.pnp.js
 
-# dependencies
-/node_modules
-/.pnp
-.pnp.*
-.yarn/*
-!.yarn/patches
-!.yarn/plugins
-!.yarn/releases
-!.yarn/versions
+# ===========================
+# Next.js
+# ===========================
+frontend/.next/
+frontend/out/
+frontend/build/
+frontend/.vercel
 
-# testing
-/coverage
+# ===========================
+# CDK
+# ===========================
+infrastructure/cdk.out/
+infrastructure/build/
+infrastructure/*.js
+infrastructure/*.d.ts
+infrastructure/tsconfig.tsbuildinfo
 
-# next.js
-/.next/
-/out/
+# ===========================
+# Lambda / Services
+# ===========================
+services/**/dist/
+services/**/build/
+services/**/*.js
+services/**/*.d.ts
+services/**/tsconfig.tsbuildinfo
 
-# production
-/build
+# ===========================
+# Environment Variables - NEVER COMMIT
+# ===========================
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+.env.production
 
-# misc
-.DS_Store
+# ===========================
+# AWS - NEVER COMMIT
+# ===========================
+.aws/
 *.pem
 
-# debug
+# ===========================
+# OS
+# ===========================
+.DS_Store
+Thumbs.db
+
+# ===========================
+# Logs
+# ===========================
+*.log
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
-.pnpm-debug.log*
 
-# env files (can opt-in for committing if needed)
-.env*
+# ===========================
+# Testing
+# ===========================
+coverage/
+.nyc_output/
 
-# vercel
-.vercel
-
-# typescript
+# ===========================
+# Misc
+# ===========================
 *.tsbuildinfo
-next-env.d.ts
+.turbo
