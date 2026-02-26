@@ -3,11 +3,15 @@ import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
 const s3 = new S3Client({});
 const BUCKET_NAME = process.env.BUCKET_NAME!;
 
-export const createUserPrefix = async (userId: string) => {
+export const createUserPrefix = async (
+  userId: string,
+  givenName: string,
+  familyName: string,
+) => {
   await s3.send(
     new PutObjectCommand({
       Bucket: BUCKET_NAME,
-      Key: `users/${userId}/`,
+      Key: `users/${givenName}-${familyName}-${userId}/`,
       Body: "",
     }),
   );
