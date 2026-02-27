@@ -5,3 +5,20 @@ if git diff --cached --quiet -- frontend/; then
 else
   cd frontend && npx tsc --noEmit && npx vitest run && npx next build
 fi
+
+if git diff --cached --quiet -- services/; then
+  echo "No services changes, skipping tests."
+else
+  for service in services/generate-presigned-url services/user-provisioning; do
+    if ! git diff --cached --quiet -- "$service/"; then
+      echo "Running tests for $service..."
+      cd "$service" && npm test && cd -
+    fi
+  done
+fi
+
+if git diff --cached --quiet -- infrastructure/; then
+  echo "No infrastructure changes, skipping tests."
+else
+  cd infrastructure && npm test
+fi
