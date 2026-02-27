@@ -13,7 +13,8 @@
     "check-env": "ts-node scripts/check-env.ts"
   },
   "devDependencies": {
-    "@types/jest": "^30",
+    "@types/jest": "^30.0.0",
+    "@types/mocha": "^10.0.10",
     "@types/node": "^24.10.13",
     "aws-cdk": "2.1107.0",
     "esbuild": "^0.27.3",
