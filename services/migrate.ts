@@ -33,6 +33,25 @@ async function main() {
     try { await execute(sql); } catch { /* already gone */ }
   }
 
+  // Register the initial migration in drizzle's tracking table so
+  // drizzle-kit migrate knows it has already been applied
+  console.log('Registering migration in drizzle tracking table...');
+  await execute(`CREATE SCHEMA IF NOT EXISTS "drizzle"`);
+  await execute(`
+    CREATE TABLE IF NOT EXISTS "drizzle"."__drizzle_migrations" (
+      id SERIAL PRIMARY KEY,
+      hash text NOT NULL,
+      created_at bigint
+    )
+  `);
+  await execute(`
+    INSERT INTO "drizzle"."__drizzle_migrations" (hash, created_at)
+    SELECT '7a3efb565536ec964ffdf6b4c099db02e17ebfb6158b6719ae2cfdd7989205ec', 1772169940484
+    WHERE NOT EXISTS (
+      SELECT 1 FROM "drizzle"."__drizzle_migrations"
+      WHERE hash = '7a3efb565536ec964ffdf6b4c099db02e17ebfb6158b6719ae2cfdd7989205ec'
+    )
+  `);
   console.log('Done.');
 }
 
