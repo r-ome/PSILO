@@ -7,9 +7,10 @@ export async function POST(req: NextRequest) {
   logger.info({ method: "POST", route: "/api/files/upload" }, "request");
 
   const cookieStore = await cookies();
-  const accessToken = cookieStore.get("access_token")?.value;
+  // Use id_token so the Lambda receives given_name/family_name JWT claims
+  const idToken = cookieStore.get("id_token")?.value;
 
-  if (!accessToken) {
+  if (!idToken) {
     logger.info({ status: 401 }, "response");
     return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
   }
@@ -43,7 +44,7 @@ export async function POST(req: NextRequest) {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${accessToken}`,
+        Authorization: `Bearer ${idToken}`,
       },
       body: JSON.stringify({ filename, contentType }),
     });

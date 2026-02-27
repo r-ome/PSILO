@@ -1,11 +1,16 @@
 "use client";
 import { useRef, useState } from "react";
+import Image from "next/image";
 import { Upload, Trash2 } from "lucide-react";
 import { Button } from "@/app/components/ui/button";
 import { cn } from "@/app/lib/utils";
 import { s3Service } from "@/app/lib/services/s3.service";
 
-const FileDropZone: React.FC = () => {
+interface FileDropZoneProps {
+  onUploadComplete?: () => void;
+}
+
+const FileDropZone: React.FC<FileDropZoneProps> = ({ onUploadComplete }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploadedFiles, setUploadedFiles] = useState<File[]>([]);
   const [fileProgresses, setFileProgresses] = useState<Record<string, number>>(
@@ -20,6 +25,7 @@ const FileDropZone: React.FC = () => {
     await s3Service.uploadToS3(url, file, (percent) =>
       setFileProgresses((prev) => ({ ...prev, [file.name]: percent })),
     );
+    onUploadComplete?.();
   };
 
   const handleFileSelect = (files: FileList | null) => {
@@ -106,11 +112,13 @@ const FileDropZone: React.FC = () => {
               }}
             >
               <div className="flex items-center gap-2">
-                <div className="w-18 h-14 bg-muted rounded-sm flex items-center justify-center self-start row-span-2 overflow-hidden">
-                  <img
+                <div className="w-18 h-14 bg-muted rounded-sm self-start row-span-2 overflow-hidden relative">
+                  <Image
+                    unoptimized
                     src={imageUrl}
                     alt={file.name}
-                    className="w-full h-full object-cover"
+                    fill
+                    className="object-cover"
                   />
                 </div>
 
