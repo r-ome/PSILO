@@ -85,7 +85,7 @@ describe('manage-photos handler', () => {
       const key = `users/John-Doe-${sub}/photo.jpg`;
 
       const result = await callHandler(
-        makeEvent('DELETE', 'DELETE /photos/{key+}', sub, { 'key+': key }),
+        makeEvent('DELETE', 'DELETE /photos/{key+}', sub, { key }),
       );
 
       expect(result.statusCode).toBe(200);
@@ -100,7 +100,7 @@ describe('manage-photos handler', () => {
       const result = await callHandler(
         makeEvent('DELETE', 'DELETE /photos/{key+}', 'u1', {
           // Last 36 chars of userSegment = 'other-user-000000000000000000000000'
-          'key+': 'users/John-Doe-000000000000000000000000000000000000/photo.jpg',
+          key: 'users/John-Doe-000000000000000000000000000000000000/photo.jpg',
         }),
       );
 

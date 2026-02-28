@@ -2,10 +2,14 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { use } from "react";
+import Image from "next/image";
 import { Button } from "@/app/components/ui/button";
+import { Trash2, Plus } from "lucide-react";
 import { albumService, AlbumWithPhotos } from "@/app/lib/services/album.service";
 import { photoService, Photo } from "@/app/lib/services/photo.service";
-import { Trash2, Plus } from "lucide-react";
+import PhotoGrid from "@/app/(protected)/components/PhotoGrid";
+import DeleteConfirmDialog from "@/app/(protected)/components/DeleteConfirmDialog";
+import ImageViewer from "@/app/(protected)/components/ImageViewer";
 
 export default function AlbumDetailPage({
   params,
@@ -16,8 +20,11 @@ export default function AlbumDetailPage({
   const [album, setAlbum] = useState<AlbumWithPhotos | null>(null);
   const [allPhotos, setAllPhotos] = useState<Photo[]>([]);
   const [showPicker, setShowPicker] = useState(false);
+  const [photoToRemove, setPhotoToRemove] = useState<Photo | null>(null);
+  const [viewerIndex, setViewerIndex] = useState<number | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkRemovePending, setBulkRemovePending] = useState(false);
 
-  // Used by handleAdd after adding a photo — not called inside an effect
   const loadAlbum = useCallback(async () => {
     try {
       const data = await albumService.getAlbum(albumId);
@@ -27,19 +34,52 @@ export default function AlbumDetailPage({
     }
   }, [albumId]);
 
-  // Initial load: setState called inside .then() callbacks (async), not synchronously
   useEffect(() => {
     albumService.getAlbum(albumId).then(setAlbum).catch(() => {});
     photoService.listPhotos().then(setAllPhotos).catch(() => {});
   }, [albumId]);
 
-  const handleRemove = async (photoId: string) => {
+  const handleToggleSelect = (photo: Photo) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(photo.id)) next.delete(photo.id);
+      else next.add(photo.id);
+      return next;
+    });
+  };
+
+  const handleRemoveConfirm = async () => {
+    if (!photoToRemove) return;
+    const id = photoToRemove.id;
+    setPhotoToRemove(null);
     try {
-      await albumService.removePhotoFromAlbum(albumId, photoId);
+      await albumService.removePhotoFromAlbum(albumId, id);
+      setAlbum((prev) =>
+        prev ? { ...prev, photos: prev.photos.filter((p) => p.id !== id) } : prev
+      );
+      setSelectedIds((prev) => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
+    } catch {
+      // ignore
+    }
+  };
+
+  const handleBulkRemoveConfirm = async () => {
+    if (!album) return;
+    const toRemove = album.photos.filter((p) => selectedIds.has(p.id));
+    setBulkRemovePending(false);
+    setSelectedIds(new Set());
+    try {
+      await Promise.all(
+        toRemove.map((p) => albumService.removePhotoFromAlbum(albumId, p.id))
+      );
       setAlbum((prev) =>
         prev
-          ? { ...prev, photos: prev.photos.filter((p) => p.id !== photoId) }
-          : prev,
+          ? { ...prev, photos: prev.photos.filter((p) => !toRemove.some((r) => r.id === p.id)) }
+          : prev
       );
     } catch {
       // ignore
@@ -85,10 +125,14 @@ export default function AlbumDetailPage({
                 className="border border-border rounded overflow-hidden hover:border-primary transition-colors text-left"
                 onClick={() => handleAdd(photo.id)}
               >
-                <div className="aspect-square bg-muted flex items-center justify-center">
-                  <span className="text-xs text-muted-foreground truncate px-1">
-                    {photo.filename}
-                  </span>
+                <div className="relative aspect-square bg-muted">
+                  <Image
+                    src={photo.signedUrl}
+                    alt={photo.filename}
+                    fill
+                    className="object-cover"
+                    sizes="(max-width: 640px) 33vw, (max-width: 768px) 25vw, 16vw"
+                  />
                 </div>
               </button>
             ))}
@@ -99,32 +143,50 @@ export default function AlbumDetailPage({
       {album.photos.length === 0 ? (
         <p className="text-sm text-muted-foreground">No photos in this album.</p>
       ) : (
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
-          {album.photos.map((photo) => (
-            <div
-              key={photo.id}
-              className="relative group border border-border rounded-lg overflow-hidden"
-            >
-              <div className="aspect-square bg-muted flex items-center justify-center">
-                <span className="text-xs text-muted-foreground truncate px-2">
-                  {photo.filename}
-                </span>
-              </div>
-              <div className="p-2 text-xs text-muted-foreground truncate">
-                {photo.filename}
-              </div>
+        <div>
+          {selectedIds.size > 0 && (
+            <div className="flex items-center gap-2 mb-4">
+              <span className="text-sm text-muted-foreground">
+                {selectedIds.size} selected
+              </span>
+              <Button variant="destructive" size="sm" onClick={() => setBulkRemovePending(true)}>
+                <Trash2 className="h-4 w-4 mr-1" />
+                Remove selected
+              </Button>
               <Button
                 variant="ghost"
-                size="icon-sm"
-                className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 bg-background/80 hover:text-red-500"
-                onClick={() => handleRemove(photo.id)}
+                size="sm"
+                onClick={() => setSelectedIds(new Set())}
               >
-                <Trash2 className="h-3 w-3" />
+                Clear
               </Button>
             </div>
-          ))}
+          )}
+          <PhotoGrid
+            photos={album.photos}
+            selectedIds={selectedIds}
+            onToggleSelect={handleToggleSelect}
+            onDeleteRequest={setPhotoToRemove}
+            onPhotoClick={setViewerIndex}
+          />
         </div>
       )}
+
+      <DeleteConfirmDialog
+        photo={photoToRemove}
+        onConfirm={handleRemoveConfirm}
+        onCancel={() => setPhotoToRemove(null)}
+      />
+      <DeleteConfirmDialog
+        bulkCount={bulkRemovePending ? selectedIds.size : null}
+        onConfirm={handleBulkRemoveConfirm}
+        onCancel={() => setBulkRemovePending(false)}
+      />
+      <ImageViewer
+        photos={album.photos}
+        initialIndex={viewerIndex}
+        onClose={() => setViewerIndex(null)}
+      />
     </div>
   );
 }

@@ -17,23 +17,33 @@ const FileDropZone: React.FC<FileDropZoneProps> = ({ onUploadComplete }) => {
     {},
   );
 
-  const uploadFile = async (file: File) => {
-    const { url } = await s3Service.getPresignedURL({
-      filename: file.name,
-      contentType: file.type,
-    });
-    await s3Service.uploadToS3(url, file, (percent) =>
+  const uploadFile = async (file: File, presignedUrl: string) => {
+    await s3Service.uploadToS3(presignedUrl, file, (percent) =>
       setFileProgresses((prev) => ({ ...prev, [file.name]: percent })),
     );
-    onUploadComplete?.();
+    removeFile(file.name);
   };
 
-  const handleFileSelect = (files: FileList | null) => {
+  const handleFileSelect = async (files: FileList | null) => {
     if (!files) return;
 
     const newFiles = Array.from(files);
     setUploadedFiles((prev) => [...prev, ...newFiles]);
-    newFiles.forEach(uploadFile);
+
+    // Generate all presigned URLs upfront in parallel
+    const presignedUrls = await Promise.all(
+      newFiles.map((file) =>
+        s3Service.getPresignedURL({ filename: file.name, contentType: file.type }),
+      ),
+    );
+
+    // Upload all files in parallel using their respective URLs
+    await Promise.all(
+      newFiles.map((file, i) => uploadFile(file, presignedUrls[i].url)),
+    );
+
+    // Notify parent once after all uploads finish
+    onUploadComplete?.();
   };
 
   const handleBoxClick = () => {
@@ -90,6 +100,7 @@ const FileDropZone: React.FC<FileDropZoneProps> = ({ onUploadComplete }) => {
             ref={fileInputRef}
             className="hidden"
             accept="image/*"
+            multiple
             onChange={(e) => handleFileSelect(e.target.files)}
           />
         </div>

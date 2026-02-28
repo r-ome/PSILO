@@ -45,7 +45,7 @@ export const handler = async (
   }
 
   if (method === 'DELETE') {
-    const key = event.pathParameters?.['key+'];
+    const key = event.pathParameters?.key;
     if (!key) {
       return respond(400, { message: 'Missing photo key' });
     }

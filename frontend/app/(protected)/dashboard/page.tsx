@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import Image from "next/image";
 import {
   Card,
   CardContent,
@@ -9,27 +8,73 @@ import {
   CardTitle,
 } from "@/app/components/ui/card";
 import { Button } from "@/app/components/ui/button";
-import FileDropZone from "@/app/(protected)/components/FileDropZone";
-import { photoService, Photo } from "@/app/lib/services/photo.service";
 import { Trash2 } from "lucide-react";
+import FileDropZone from "@/app/(protected)/components/FileDropZone";
+import PhotoGrid from "@/app/(protected)/components/PhotoGrid";
+import DeleteConfirmDialog from "@/app/(protected)/components/DeleteConfirmDialog";
+import ImageViewer from "@/app/(protected)/components/ImageViewer";
+import { photoService, Photo } from "@/app/lib/services/photo.service";
 
 export default function Page() {
   const [photos, setPhotos] = useState<Photo[]>([]);
+  const [photoToDelete, setPhotoToDelete] = useState<Photo | null>(null);
+  const [viewerIndex, setViewerIndex] = useState<number | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkDeletePending, setBulkDeletePending] = useState(false);
 
-  // Used by FileDropZone after upload — not called inside an effect
   const loadPhotos = useCallback(() => {
-    photoService.listPhotos().then(setPhotos).catch(() => {});
+    photoService
+      .listPhotos()
+      .then(setPhotos)
+      .catch(() => {});
   }, []);
 
-  // Initial load: setState called inside .then() callback (async), not synchronously
   useEffect(() => {
-    photoService.listPhotos().then(setPhotos).catch(() => {});
+    photoService
+      .listPhotos()
+      .then(setPhotos)
+      .catch(() => {});
   }, []);
 
-  const handleDelete = async (s3Key: string) => {
+  const handleUploadComplete = useCallback(() => {
+    setTimeout(loadPhotos, 2000);
+  }, [loadPhotos]);
+
+  const handleToggleSelect = (photo: Photo) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(photo.id)) next.delete(photo.id);
+      else next.add(photo.id);
+      return next;
+    });
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (!photoToDelete) return;
+    const key = photoToDelete.s3Key;
+    setPhotoToDelete(null);
     try {
-      await photoService.deletePhoto(s3Key);
-      setPhotos((prev) => prev.filter((p) => p.s3Key !== s3Key));
+      await photoService.deletePhoto(key);
+      setPhotos((prev) => prev.filter((p) => p.s3Key !== key));
+      setSelectedIds((prev) => {
+        const next = new Set(prev);
+        next.delete(photoToDelete.id);
+        return next;
+      });
+    } catch {
+      // ignore
+    }
+  };
+
+  const handleBulkDeleteConfirm = async () => {
+    const toDelete = photos.filter((p) => selectedIds.has(p.id));
+    setBulkDeletePending(false);
+    setSelectedIds(new Set());
+    try {
+      await Promise.all(toDelete.map((p) => photoService.deletePhoto(p.s3Key)));
+      setPhotos((prev) =>
+        prev.filter((p) => !toDelete.some((d) => d.id === p.id)),
+      );
     } catch {
       // ignore
     }
@@ -43,45 +88,63 @@ export default function Page() {
             <CardTitle>Upload Your Files</CardTitle>
           </CardHeader>
           <CardContent>
-            <FileDropZone onUploadComplete={loadPhotos} />
+            <FileDropZone onUploadComplete={handleUploadComplete} />
           </CardContent>
         </Card>
       </div>
 
       {photos.length > 0 && (
         <div>
-          <h2 className="text-lg font-semibold mb-4">Your Photos</h2>
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
-            {photos.map((photo) => (
-              <div
-                key={photo.id}
-                className="relative group border border-border rounded-lg overflow-hidden"
-              >
-                <div className="relative aspect-square bg-muted">
-                  <Image
-                    src={photo.signedUrl}
-                    alt={photo.filename}
-                    fill
-                    className="object-cover"
-                    sizes="(max-width: 640px) 50vw, (max-width: 768px) 33vw, (max-width: 1024px) 25vw, 16vw"
-                  />
-                </div>
-                <div className="p-2 text-xs text-muted-foreground truncate">
-                  {photo.filename}
-                </div>
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-lg font-semibold">Your Photos</h2>
+            {selectedIds.size > 0 && (
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-muted-foreground">
+                  {selectedIds.size} selected
+                </span>
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  onClick={() => setBulkDeletePending(true)}
+                >
+                  <Trash2 className="h-4 w-4 mr-1" />
+                  Delete selected
+                </Button>
                 <Button
                   variant="ghost"
-                  size="icon-sm"
-                  className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 bg-background/80 hover:text-red-500"
-                  onClick={() => handleDelete(photo.s3Key)}
+                  size="sm"
+                  onClick={() => setSelectedIds(new Set())}
                 >
-                  <Trash2 className="h-3 w-3" />
+                  Clear
                 </Button>
               </div>
-            ))}
+            )}
           </div>
+          <PhotoGrid
+            photos={photos}
+            selectedIds={selectedIds}
+            onToggleSelect={handleToggleSelect}
+            onDeleteRequest={setPhotoToDelete}
+            onPhotoClick={setViewerIndex}
+          />
         </div>
       )}
+
+      <DeleteConfirmDialog
+        photo={photoToDelete}
+        onConfirm={handleDeleteConfirm}
+        onCancel={() => setPhotoToDelete(null)}
+      />
+      <DeleteConfirmDialog
+        bulkCount={bulkDeletePending ? selectedIds.size : null}
+        onConfirm={handleBulkDeleteConfirm}
+        onCancel={() => setBulkDeletePending(false)}
+      />
+      <ImageViewer
+        photos={photos}
+        initialIndex={viewerIndex}
+        onClose={() => setViewerIndex(null)}
+      />
     </div>
   );
 }
