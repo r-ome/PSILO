@@ -8,6 +8,27 @@
       "when": 1772169940484,
       "tag": "0000_solid_whirlwind",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1772434786641,
+      "tag": "0001_serious_talisman",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1772520000000,
+      "tag": "0002_add_taken_at",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1772442126827,
+      "tag": "0003_crazy_forgotten_one",
+      "breakpoints": true
     }
   ]
 }

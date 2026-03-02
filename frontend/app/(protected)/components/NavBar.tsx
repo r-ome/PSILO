@@ -45,23 +45,19 @@ export const NavBar = () => {
         <NavigationMenu className="px-5">
           <NavigationMenuList>
             <NavigationMenuItem>
-              <NavigationMenuTrigger>Something</NavigationMenuTrigger>
-              <NavigationMenuContent>
-                <ul className="w-96">
-                  <ListItem href="/docs" title="Introduction">
-                    Re-usable components built with Tailwind CSS.
-                  </ListItem>
-                  <ListItem href="/docs/installation" title="Installation">
-                    How to install dependencies and structure your app.
-                  </ListItem>
-                  <ListItem
-                    href="/docs/primitives/typography"
-                    title="Typography"
-                  >
-                    Styles for headings, paragraphs, lists...etc
-                  </ListItem>
-                </ul>
-              </NavigationMenuContent>
+              <NavigationMenuLink asChild>
+                <Link href="/dashboard">
+                  <Button variant="link">Home</Button>
+                </Link>
+              </NavigationMenuLink>
+            </NavigationMenuItem>
+
+            <NavigationMenuItem>
+              <NavigationMenuLink asChild>
+                <Link href="/albums">
+                  <Button variant="link">Album</Button>
+                </Link>
+              </NavigationMenuLink>
             </NavigationMenuItem>
 
             <NavigationMenuItem>

@@ -2,13 +2,14 @@
 
 import { useEffect, useState, useCallback } from "react";
 import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@/app/components/ui/card";
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/app/components/ui/dialog";
 import { Button } from "@/app/components/ui/button";
-import { Trash2 } from "lucide-react";
+import { Trash2, Upload } from "lucide-react";
 import FileDropZone from "@/app/(protected)/components/FileDropZone";
 import PhotoGrid from "@/app/(protected)/components/PhotoGrid";
 import DeleteConfirmDialog from "@/app/(protected)/components/DeleteConfirmDialog";
@@ -21,6 +22,7 @@ export default function Page() {
   const [viewerIndex, setViewerIndex] = useState<number | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkDeletePending, setBulkDeletePending] = useState(false);
+  const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
 
   const loadPhotos = useCallback(() => {
     photoService
@@ -36,7 +38,19 @@ export default function Page() {
       .catch(() => {});
   }, []);
 
+  useEffect(() => {
+    const hasInProgress = photos.some(
+      (p) => p.status === 'pending' || p.status === 'processing',
+    );
+    if (!hasInProgress) return;
+    const id = setInterval(() => {
+      photoService.listPhotos().then(setPhotos).catch(() => {});
+    }, 3000);
+    return () => clearInterval(id);
+  }, [photos]);
+
   const handleUploadComplete = useCallback(() => {
+    setUploadDialogOpen(false);
     setTimeout(loadPhotos, 2000);
   }, [loadPhotos]);
 
@@ -66,6 +80,16 @@ export default function Page() {
     }
   };
 
+  const handleRetry = async (photo: Photo) => {
+    try {
+      await photoService.deletePhoto(photo.s3Key);
+      setPhotos((prev) => prev.filter((p) => p.id !== photo.id));
+    } catch {
+      // ignore
+    }
+    setUploadDialogOpen(true);
+  };
+
   const handleBulkDeleteConfirm = async () => {
     const toDelete = photos.filter((p) => selectedIds.has(p.id));
     setBulkDeletePending(false);
@@ -82,16 +106,20 @@ export default function Page() {
 
   return (
     <div className="space-y-8">
-      <div className="w-1/3">
-        <Card>
-          <CardHeader>
-            <CardTitle>Upload Your Files</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <FileDropZone onUploadComplete={handleUploadComplete} />
-          </CardContent>
-        </Card>
-      </div>
+      <Dialog open={uploadDialogOpen} onOpenChange={setUploadDialogOpen}>
+        <DialogTrigger asChild>
+          <Button>
+            <Upload className="h-4 w-4 mr-2" />
+            Upload Files
+          </Button>
+        </DialogTrigger>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Upload Your Files</DialogTitle>
+          </DialogHeader>
+          <FileDropZone onUploadComplete={handleUploadComplete} />
+        </DialogContent>
+      </Dialog>
 
       {photos.length > 0 && (
         <div>
@@ -126,6 +154,7 @@ export default function Page() {
             onToggleSelect={handleToggleSelect}
             onDeleteRequest={setPhotoToDelete}
             onPhotoClick={setViewerIndex}
+            onRetry={handleRetry}
           />
         </div>
       )}

@@ -25,7 +25,10 @@ export async function GET() {
     return NextResponse.json(data, { status: response.status });
   } catch (err) {
     logger.error({ err }, "unhandled error");
-    return NextResponse.json({ message: "Internal server error" }, { status: 500 });
+    return NextResponse.json(
+      { message: "Internal server error" },
+      { status: 500 },
+    );
   }
 }
 
@@ -53,6 +56,41 @@ export async function POST(req: NextRequest) {
     return NextResponse.json(data, { status: response.status });
   } catch (err) {
     logger.error({ err }, "unhandled error");
-    return NextResponse.json({ message: "Internal server error" }, { status: 500 });
+    return NextResponse.json(
+      { message: "Internal server error" },
+      { status: 500 },
+    );
+  }
+}
+
+export async function DELETE(req: NextRequest) {
+  logger.info({ method: "DELETE", route: "/api/albums" }, "request");
+
+  const accessToken = await getAccessToken();
+  if (!accessToken) {
+    return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
+  }
+
+  const albumId = req.nextUrl.searchParams.get("id");
+  if (!albumId) {
+    return NextResponse.json({ message: "Bad Request" }, { status: 400 });
+  }
+
+  try {
+    const response = await fetch(`${env.BACKEND_API_URL}/albums/${albumId}`, {
+      method: "DELETE",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+    });
+
+    const data = await response.json();
+    return NextResponse.json(data, { status: response.status });
+  } catch (err) {
+    logger.error({ err }, "unhandled error");
+    return NextResponse.json(
+      { message: "Internal server error" },
+      { status: 500 },
+    );
   }
 }

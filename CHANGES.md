@@ -274,3 +274,65 @@ cd services && npx tsx migrate.ts
 | `drizzle-orm` type mismatch in TypeScript | Two separate installs: `service/node_modules` and `services/node_modules` | Install once at `services/` level, remove from individual services |
 | `manage-albums` tests always returning 405 | `routeKey` read from `requestContext` instead of top-level event | Fixed test `makeEvent()` and confirmed handler reads `event.routeKey` |
 | `drizzle-kit migrate` middleware error | Internal AWS SDK conflict inside drizzle-kit runner | Replaced with custom `migrate.ts` using `RDSDataClient` directly |
+
+---
+
+## 2026-03-02
+
+### SQS-based photo processing pipeline
+
+- **Decoupled S3 → Lambda with SQS**: S3 `OBJECT_CREATED` events now publish to an `UploadQueue` (SQS) instead of invoking `process-photo-metadata` directly. The Lambda polls the queue with `batchSize: 1` and reports batch item failures (`reportBatchItemFailures: true`) for proper per-message retry without re-processing the whole batch.
+- **Dead Letter Queue (`UploadDlq`)**: 14-day retention, max 3 receive attempts. A new `handle-upload-dlq` Lambda consumes DLQ messages and marks the photo record as `status = 'failed'` in the database.
+- **Phase-based processing in `process-photo-metadata`**:
+  1. `INSERT ... ON CONFLICT DO UPDATE SET status = 'processing'` — idempotent, handles SQS re-delivery.
+  2. Download from S3 + extract metadata via Sharp + parse `takenAt`.
+  3. `UPDATE photos SET status = 'completed', width, height, format, contentType, takenAt`.
+- **EXIF + filename date extraction**: Added `extractTakenAt()` — reads EXIF `DateTimeOriginal`/`DateTime` via `exif-reader`, falls back to filename patterns for iOS (`2026-03-02 17.08.14.jpg`), Android (`IMG_20231215_103045.jpg`), WhatsApp (`IMG-20231215-WA0001.jpg`), and date-only (`YYYYMMDD`).
+
+### Schema / Migrations
+
+- Added `status varchar(20) NOT NULL DEFAULT 'pending'` to `photos` table (`pending` → `processing` → `completed` | `failed`).
+- Added `taken_at timestamp` column to `photos` table.
+- `width` column made nullable.
+
+### Infrastructure (CDK)
+
+- Aurora Serverless v2: `serverlessV2MinCapacity: 0.5`, `serverlessV2MaxCapacity: 4`, reader scales with writer (`scaleWithWriter: true`).
+- `process-photo-metadata` timeout raised from 30 s → 300 s; memory raised to 3008 MB (Sharp processes full-res images).
+- `managePhotos` and `manageAlbums` timeouts raised to 29 s.
+- `manageAlbums` granted S3 read access + `BUCKET_NAME` env var (needed to generate signed URLs on `GET /albums/{albumId}`).
+- API Gateway: added `DELETE /albums/{albumId}` route.
+- `UploadQueue` `visibilityTimeout` set to 310 s (> Lambda timeout) to prevent double-processing.
+
+### Album management (`manage-albums` Lambda + frontend)
+
+- **Signed URLs on album fetch**: `GET /albums/{albumId}` generates a presigned `GetObject` URL (1 h TTL) for each photo before returning.
+- **Delete album** (`DELETE /albums/{albumId}`): verifies ownership, cascades deletion of `album_photos` rows, then deletes the album. Frontend navigates to `/dashboard` on success.
+- **Multi-select photo picker**: "Add Photo" (single-click) replaced with a `Dialog`-based picker. Photos toggle on/off with a check indicator; all selected photos are added in one batch `Promise.all`. Only `completed` photos appear in the picker.
+
+### Dashboard page
+
+- Upload section moved from an always-visible card to a `Dialog` triggered by an **Upload Files** button. Dialog closes automatically when upload completes.
+- **Auto-polling**: while any photo has `status = 'pending'` or `'processing'`, the photo list refreshes every 3 seconds via `setInterval`. Interval is cleared once all photos reach a terminal state.
+- **Retry failed uploads**: clicking Retry on a failed photo deletes the DB record and re-opens the upload dialog so the user can re-upload.
+
+### PhotoGrid component
+
+- `pending` / `processing` photos: show a spinner + status label; selection and delete controls are hidden.
+- `failed` photos: show an error icon, "Failed" label, and optional Retry button (via new `onRetry` prop).
+- `completed` photos: scale-down animation (`scale-90`) when selected.
+
+### DeleteConfirmDialog component
+
+- Added `customTitle` and `customDescription` props so the dialog can be reused for non-photo delete confirmations (e.g. deleting an album).
+- `onConfirm` signature changed to `() => Promise<void>`. Shows a loading spinner on the Delete button while the async operation runs; background close is blocked during deletion.
+
+### NavBar
+
+- Replaced placeholder "Something" dropdown with real **Home** (`/dashboard`) and **Album** (`/albums`) navigation links.
+
+### Frontend services / API routes
+
+- `album.service.ts`: added `deleteAlbum(albumId)`.
+- `photo.service.ts`: added `status: 'pending' | 'processing' | 'completed' | 'failed'` to `Photo` interface.
+- `app/api/albums/route.ts`: added `DELETE` handler — BFF proxy for `DELETE /albums/{albumId}` (passes `?id=` query param).

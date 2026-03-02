@@ -10,6 +10,7 @@ export interface Photo {
   height: number | null;
   format: string | null;
   contentType: string | null;
+  status: 'pending' | 'processing' | 'completed' | 'failed';
   createdAt: string | null;
   signedUrl: string;
 }

@@ -2,10 +2,21 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { use } from "react";
+import { useRouter } from "next/navigation";
 import Image from "next/image";
 import { Button } from "@/app/components/ui/button";
-import { Trash2, Plus } from "lucide-react";
-import { albumService, AlbumWithPhotos } from "@/app/lib/services/album.service";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/app/components/ui/dialog";
+import { Trash2, Plus, Check } from "lucide-react";
+import {
+  albumService,
+  AlbumWithPhotos,
+} from "@/app/lib/services/album.service";
 import { photoService, Photo } from "@/app/lib/services/photo.service";
 import PhotoGrid from "@/app/(protected)/components/PhotoGrid";
 import DeleteConfirmDialog from "@/app/(protected)/components/DeleteConfirmDialog";
@@ -16,14 +27,19 @@ export default function AlbumDetailPage({
 }: {
   params: Promise<{ albumId: string }>;
 }) {
+  const router = useRouter();
   const { albumId } = use(params);
   const [album, setAlbum] = useState<AlbumWithPhotos | null>(null);
   const [allPhotos, setAllPhotos] = useState<Photo[]>([]);
   const [showPicker, setShowPicker] = useState(false);
+  const [pickerSelectedIds, setPickerSelectedIds] = useState<Set<string>>(
+    new Set(),
+  );
   const [photoToRemove, setPhotoToRemove] = useState<Photo | null>(null);
   const [viewerIndex, setViewerIndex] = useState<number | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkRemovePending, setBulkRemovePending] = useState(false);
+  const [albumDeletePending, setAlbumDeletePending] = useState(false);
 
   const loadAlbum = useCallback(async () => {
     try {
@@ -35,9 +51,26 @@ export default function AlbumDetailPage({
   }, [albumId]);
 
   useEffect(() => {
-    albumService.getAlbum(albumId).then(setAlbum).catch(() => {});
-    photoService.listPhotos().then(setAllPhotos).catch(() => {});
+    albumService
+      .getAlbum(albumId)
+      .then(setAlbum)
+      .catch(() => {});
+    photoService
+      .listPhotos()
+      .then(setAllPhotos)
+      .catch(() => {});
   }, [albumId]);
+
+  useEffect(() => {
+    const albumHasInProgress = album?.photos.some(
+      (p) => p.status === 'pending' || p.status === 'processing',
+    );
+    if (!albumHasInProgress) return;
+    const id = setInterval(() => {
+      albumService.getAlbum(albumId).then(setAlbum).catch(() => {});
+    }, 3000);
+    return () => clearInterval(id);
+  }, [album, albumId]);
 
   const handleToggleSelect = (photo: Photo) => {
     setSelectedIds((prev) => {
@@ -55,7 +88,9 @@ export default function AlbumDetailPage({
     try {
       await albumService.removePhotoFromAlbum(albumId, id);
       setAlbum((prev) =>
-        prev ? { ...prev, photos: prev.photos.filter((p) => p.id !== id) } : prev
+        prev
+          ? { ...prev, photos: prev.photos.filter((p) => p.id !== id) }
+          : prev,
       );
       setSelectedIds((prev) => {
         const next = new Set(prev);
@@ -74,74 +109,164 @@ export default function AlbumDetailPage({
     setSelectedIds(new Set());
     try {
       await Promise.all(
-        toRemove.map((p) => albumService.removePhotoFromAlbum(albumId, p.id))
+        toRemove.map((p) => albumService.removePhotoFromAlbum(albumId, p.id)),
       );
       setAlbum((prev) =>
         prev
-          ? { ...prev, photos: prev.photos.filter((p) => !toRemove.some((r) => r.id === p.id)) }
-          : prev
+          ? {
+              ...prev,
+              photos: prev.photos.filter(
+                (p) => !toRemove.some((r) => r.id === p.id),
+              ),
+            }
+          : prev,
       );
     } catch {
       // ignore
     }
   };
 
-  const handleAdd = async (photoId: string) => {
+  const handlePickerToggle = (photoId: string) => {
+    setPickerSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(photoId)) next.delete(photoId);
+      else next.add(photoId);
+      return next;
+    });
+  };
+
+  const handleAddPhotos = async () => {
+    if (pickerSelectedIds.size === 0) return;
     try {
-      await albumService.addPhotoToAlbum(albumId, photoId);
+      await Promise.all(
+        [...pickerSelectedIds].map((id) =>
+          albumService.addPhotoToAlbum(albumId, id),
+        ),
+      );
       await loadAlbum();
+    } catch {
+      // ignore
+    } finally {
       setShowPicker(false);
+      setPickerSelectedIds(new Set());
+    }
+  };
+
+  const handleDeleteAlbum = async () => {
+    setAlbumDeletePending(false);
+    try {
+      await albumService.deleteAlbum(albumId);
+      router.push("/dashboard");
     } catch {
       // ignore
     }
   };
 
   const albumPhotoIds = new Set(album?.photos.map((p) => p.id) ?? []);
-  const availablePhotos = allPhotos.filter((p) => !albumPhotoIds.has(p.id));
+  const availablePhotos = allPhotos.filter(
+    (p) => !albumPhotoIds.has(p.id) && p.status === 'completed',
+  );
 
-  if (!album) return <p className="text-sm text-muted-foreground">Loading...</p>;
+  if (!album)
+    return <p className="text-sm text-muted-foreground">Loading...</p>;
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">{album.name}</h1>
+        <div className="flex items-center gap-2">
+          <h1 className="text-2xl font-bold">{album.name}</h1>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setAlbumDeletePending(true)}
+          >
+            <Trash2 className="h-4 w-4" />
+          </Button>
+        </div>
         <Button
           variant="outline"
           size="sm"
-          onClick={() => setShowPicker((v) => !v)}
+          onClick={() => {
+            setShowPicker(true);
+            setPickerSelectedIds(new Set());
+          }}
         >
           <Plus className="h-4 w-4 mr-1" />
-          Add Photo
+          Add Photos
         </Button>
       </div>
 
-      {showPicker && availablePhotos.length > 0 && (
-        <div className="border border-border rounded-lg p-4">
-          <p className="text-sm font-medium mb-3">Select a photo to add:</p>
-          <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-3">
-            {availablePhotos.map((photo) => (
-              <button
-                key={photo.id}
-                className="border border-border rounded overflow-hidden hover:border-primary transition-colors text-left"
-                onClick={() => handleAdd(photo.id)}
-              >
-                <div className="relative aspect-square bg-muted">
-                  <Image
-                    src={photo.signedUrl}
-                    alt={photo.filename}
-                    fill
-                    className="object-cover"
-                    sizes="(max-width: 640px) 33vw, (max-width: 768px) 25vw, 16vw"
-                  />
-                </div>
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
+      <Dialog
+        open={showPicker}
+        onOpenChange={(open) => {
+          if (!open) {
+            setShowPicker(false);
+            setPickerSelectedIds(new Set());
+          }
+        }}
+      >
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Add Photos to {album.name}</DialogTitle>
+          </DialogHeader>
+          {availablePhotos.length === 0 ? (
+            <p className="text-sm text-muted-foreground py-4">
+              No photos available to add.
+            </p>
+          ) : (
+            <div className="grid grid-cols-3 sm:grid-cols-4 gap-3 max-h-[60vh] overflow-y-auto py-2">
+              {availablePhotos.map((photo) => {
+                const selected = pickerSelectedIds.has(photo.id);
+                return (
+                  <button
+                    key={photo.id}
+                    className={`relative rounded overflow-hidden border-2 transition-colors text-left hover:cursor-pointer ${selected ? "border-primary" : "border-transparent"}`}
+                    onClick={() => handlePickerToggle(photo.id)}
+                  >
+                    <div className="relative aspect-square bg-muted">
+                      <Image
+                        src={photo.signedUrl}
+                        alt={photo.filename}
+                        fill
+                        className="object-cover"
+                        sizes="(max-width: 640px) 33vw, 25vw"
+                      />
+                    </div>
+                    {selected && (
+                      <div className="absolute top-1 left-1 bg-primary text-primary-foreground rounded-full p-0.5">
+                        <Check className="h-3 w-3" />
+                      </div>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setShowPicker(false);
+                setPickerSelectedIds(new Set());
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleAddPhotos}
+              disabled={pickerSelectedIds.size === 0}
+            >
+              Add{" "}
+              {pickerSelectedIds.size > 0 ? `(${pickerSelectedIds.size})` : ""}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {album.photos.length === 0 ? (
-        <p className="text-sm text-muted-foreground">No photos in this album.</p>
+        <p className="text-sm text-muted-foreground">
+          No photos in this album.
+        </p>
       ) : (
         <div>
           {selectedIds.size > 0 && (
@@ -149,7 +274,11 @@ export default function AlbumDetailPage({
               <span className="text-sm text-muted-foreground">
                 {selectedIds.size} selected
               </span>
-              <Button variant="destructive" size="sm" onClick={() => setBulkRemovePending(true)}>
+              <Button
+                variant="destructive"
+                size="sm"
+                onClick={() => setBulkRemovePending(true)}
+              >
                 <Trash2 className="h-4 w-4 mr-1" />
                 Remove selected
               </Button>
@@ -181,6 +310,16 @@ export default function AlbumDetailPage({
         bulkCount={bulkRemovePending ? selectedIds.size : null}
         onConfirm={handleBulkRemoveConfirm}
         onCancel={() => setBulkRemovePending(false)}
+      />
+      <DeleteConfirmDialog
+        customTitle={albumDeletePending ? `Delete "${album.name}"?` : undefined}
+        customDescription={
+          albumDeletePending
+            ? `Are you sure you want to delete "${album.name}"? This action cannot be undone.`
+            : undefined
+        }
+        onConfirm={handleDeleteAlbum}
+        onCancel={() => setAlbumDeletePending(false)}
       />
       <ImageViewer
         photos={album.photos}

@@ -1,0 +1,1 @@
+ALTER TABLE "photos" ADD COLUMN "status" varchar(20) DEFAULT 'pending' NOT NULL;

@@ -1,0 +1,1 @@
+ALTER TABLE "photos" ALTER COLUMN "width" DROP NOT NULL;

@@ -37,6 +37,10 @@ jest.mock('drizzle-orm', () => ({
   and: jest.fn((...args) => ({ and: args })),
 }));
 
+jest.mock('@aws-sdk/s3-request-presigner', () => ({
+  getSignedUrl: jest.fn().mockResolvedValue('https://example.com/signed-url'),
+}));
+
 function makeEvent(
   method: string,
   routeKey: string,
@@ -183,6 +187,39 @@ describe('manage-albums handler', () => {
       );
 
       expect(result.statusCode).toBe(404);
+    });
+  });
+
+  describe('DELETE /albums/{albumId}', () => {
+    it('deletes album and removes photo associations', async () => {
+      mockSelectWhere.mockResolvedValueOnce([{ id: 'a1', userId: 'u1' }]);
+
+      const result = await callHandler(
+        makeEvent('DELETE', 'DELETE /albums/{albumId}', 'u1', { albumId: 'a1' }),
+      );
+
+      expect(result.statusCode).toBe(200);
+      expect(mockDelete).toHaveBeenCalledTimes(2);
+      expect(mockDelete).toHaveBeenCalledWith('album_photos_table');
+      expect(mockDelete).toHaveBeenCalledWith('albums_table');
+    });
+
+    it('returns 404 when album not found', async () => {
+      mockSelectWhere.mockResolvedValueOnce([]);
+
+      const result = await callHandler(
+        makeEvent('DELETE', 'DELETE /albums/{albumId}', 'u1', { albumId: 'a1' }),
+      );
+
+      expect(result.statusCode).toBe(404);
+    });
+
+    it('returns 400 when albumId is missing', async () => {
+      const result = await callHandler(
+        makeEvent('DELETE', 'DELETE /albums/{albumId}', 'u1', {}),
+      );
+
+      expect(result.statusCode).toBe(400);
     });
   });
 

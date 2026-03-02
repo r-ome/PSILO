@@ -1,6 +1,7 @@
 import * as cdk from "aws-cdk-lib";
 import * as s3 from "aws-cdk-lib/aws-s3";
 import * as s3n from "aws-cdk-lib/aws-s3-notifications";
+import * as sqs from "aws-cdk-lib/aws-sqs";
 import * as cognito from "aws-cdk-lib/aws-cognito";
 import * as lambda from "aws-cdk-lib/aws-lambda";
 import * as ec2 from "aws-cdk-lib/aws-ec2";
@@ -10,6 +11,7 @@ import * as apigatewayv2 from "aws-cdk-lib/aws-apigatewayv2";
 import * as apigatewayv2Integrations from "aws-cdk-lib/aws-apigatewayv2-integrations";
 import * as apigatewayv2Authorizers from "aws-cdk-lib/aws-apigatewayv2-authorizers";
 import { NodejsFunction } from "aws-cdk-lib/aws-lambda-nodejs";
+import { SqsEventSource } from "aws-cdk-lib/aws-lambda-event-sources";
 import * as path from "path";
 import { env } from "../config/env";
 
@@ -58,7 +60,11 @@ export class PsiloStack extends cdk.Stack {
       engine: rds.DatabaseClusterEngine.auroraPostgres({
         version: rds.AuroraPostgresEngineVersion.VER_16_6,
       }),
-      writer: rds.ClusterInstance.serverlessV2("writer"),
+      writer: rds.ClusterInstance.serverlessV2("writer", {
+        scaleWithWriter: true,
+      }),
+      serverlessV2MinCapacity: 0.5,
+      serverlessV2MaxCapacity: 4,
       enableDataApi: true,
       credentials: rds.Credentials.fromSecret(dbSecret),
       defaultDatabaseName: "psilo",
@@ -72,6 +78,15 @@ export class PsiloStack extends cdk.Stack {
       DB_SECRET_ARN: dbSecret.secretArn,
       DB_NAME: "psilo",
     };
+
+    const uploadDlq = new sqs.Queue(this, "UploadDlq", {
+      retentionPeriod: cdk.Duration.days(14),
+    });
+
+    const uploadQueue = new sqs.Queue(this, "UploadQueue", {
+      visibilityTimeout: cdk.Duration.seconds(310),
+      deadLetterQueue: { queue: uploadDlq, maxReceiveCount: 3 },
+    });
 
     const userProvisioningFn = new NodejsFunction(this, "UserProvisioningFn", {
       entry: path.join(
@@ -144,7 +159,8 @@ export class PsiloStack extends cdk.Stack {
         BUCKET_NAME: userBucket.bucketName,
         ...dbEnv,
       },
-      timeout: cdk.Duration.seconds(30),
+      timeout: cdk.Duration.seconds(300),
+      memorySize: 3008,
       bundling: {
         esbuildVersion: "0.21",
         nodeModules: ["sharp"],
@@ -161,12 +177,34 @@ export class PsiloStack extends cdk.Stack {
     userBucket.grantRead(processPhotoMetadataFn);
     dbCluster.grantDataApiAccess(processPhotoMetadataFn);
     dbSecret.grantRead(processPhotoMetadataFn);
+    uploadQueue.grantConsumeMessages(processPhotoMetadataFn);
+    processPhotoMetadataFn.addEventSource(new SqsEventSource(uploadQueue, {
+      batchSize: 1,
+      reportBatchItemFailures: true,
+    }));
 
     userBucket.addEventNotification(
       s3.EventType.OBJECT_CREATED,
-      new s3n.LambdaDestination(processPhotoMetadataFn),
+      new s3n.SqsDestination(uploadQueue),
       { prefix: "users/" },
     );
+
+    const handleUploadDlqFn = new NodejsFunction(this, "HandleUploadDlqFn", {
+      entry: path.join(__dirname, "../../services/handle-upload-dlq/src/handler.ts"),
+      handler: "handler",
+      runtime: lambda.Runtime.NODEJS_22_X,
+      environment: { ...dbEnv },
+      timeout: cdk.Duration.seconds(10),
+      bundling: { esbuildVersion: "0.21" },
+    });
+
+    dbCluster.grantDataApiAccess(handleUploadDlqFn);
+    dbSecret.grantRead(handleUploadDlqFn);
+    uploadDlq.grantConsumeMessages(handleUploadDlqFn);
+    handleUploadDlqFn.addEventSource(new SqsEventSource(uploadDlq, {
+      batchSize: 1,
+      reportBatchItemFailures: true,
+    }));
 
     const managePhotosFn = new NodejsFunction(this, "ManagePhotosFn", {
       entry: path.join(__dirname, "../../services/manage-photos/src/handler.ts"),
@@ -176,7 +214,7 @@ export class PsiloStack extends cdk.Stack {
         BUCKET_NAME: userBucket.bucketName,
         ...dbEnv,
       },
-      timeout: cdk.Duration.seconds(10),
+      timeout: cdk.Duration.seconds(29),
       bundling: {
         esbuildVersion: "0.21",
       },
@@ -192,14 +230,16 @@ export class PsiloStack extends cdk.Stack {
       handler: "handler",
       runtime: lambda.Runtime.NODEJS_22_X,
       environment: {
+        BUCKET_NAME: userBucket.bucketName,
         ...dbEnv,
       },
-      timeout: cdk.Duration.seconds(10),
+      timeout: cdk.Duration.seconds(29),
       bundling: {
         esbuildVersion: "0.21",
       },
     });
 
+    userBucket.grantRead(manageAlbumsFn);
     dbCluster.grantDataApiAccess(manageAlbumsFn);
     dbSecret.grantRead(manageAlbumsFn);
 
@@ -266,7 +306,7 @@ export class PsiloStack extends cdk.Stack {
 
     httpApi.addRoutes({
       path: "/albums/{albumId}",
-      methods: [apigatewayv2.HttpMethod.GET],
+      methods: [apigatewayv2.HttpMethod.GET, apigatewayv2.HttpMethod.DELETE],
       integration: manageAlbumsIntegration,
       authorizer: cognitoAuthorizer,
     });

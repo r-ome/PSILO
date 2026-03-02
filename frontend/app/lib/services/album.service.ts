@@ -23,4 +23,6 @@ export const albumService = {
     api.post<{ message: string }>(`/api/albums/${albumId}/photos`, { photoId }),
   removePhotoFromAlbum: (albumId: string, photoId: string) =>
     api.delete<{ message: string }>(`/api/albums/${albumId}/photos/${photoId}`),
+  deleteAlbum: (albumId: string) =>
+    api.delete<{ message: string }>(`/api/albums?id=${albumId}`),
 };

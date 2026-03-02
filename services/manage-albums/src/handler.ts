@@ -1,7 +1,12 @@
 import { APIGatewayProxyEventV2WithJWTAuthorizer, APIGatewayProxyResultV2 } from 'aws-lambda';
+import { S3Client, GetObjectCommand } from '@aws-sdk/client-s3';
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { eq, and } from 'drizzle-orm';
 import { createDb } from '../../shared/db';
 import { albums, albumPhotos, photos } from '../../shared/schema';
+
+const s3 = new S3Client({});
+const BUCKET_NAME = process.env.BUCKET_NAME!;
 
 function respond(statusCode: number, body: unknown): APIGatewayProxyResultV2 {
   return {
@@ -52,7 +57,18 @@ export const handler = async (
       .innerJoin(photos, eq(albumPhotos.photoId, photos.id))
       .where(eq(albumPhotos.albumId, albumId));
 
-    return respond(200, { ...album, photos: albumPhotosList.map((r) => r.photo) });
+    const photosWithUrls = await Promise.all(
+      albumPhotosList.map(async ({ photo }) => ({
+        ...photo,
+        signedUrl: await getSignedUrl(
+          s3,
+          new GetObjectCommand({ Bucket: BUCKET_NAME, Key: photo.s3Key }),
+          { expiresIn: 3600 },
+        ),
+      })),
+    );
+
+    return respond(200, { ...album, photos: photosWithUrls });
   }
 
   // POST /albums/{albumId}/photos
@@ -90,6 +106,26 @@ export const handler = async (
       and(eq(albumPhotos.albumId, albumId), eq(albumPhotos.photoId, photoId)),
     );
     return respond(200, { message: 'Photo removed from album' });
+  }
+
+  // DELETE /albums/{albumId}
+  if (method === 'DELETE' && routeKey === 'DELETE /albums/{albumId}') {
+    const albumId = event.pathParameters?.albumId;
+    if (!albumId) return respond(400, { message: 'Missing albumId' });
+
+    // Verify album ownership
+    const [album] = await db.select().from(albums).where(
+      and(eq(albums.id, albumId), eq(albums.userId, sub)),
+    );
+    if (!album) return respond(404, { message: 'Album not found' });
+
+    // Delete all album-photo associations
+    await db.delete(albumPhotos).where(eq(albumPhotos.albumId, albumId));
+
+    // Delete the album
+    await db.delete(albums).where(eq(albums.id, albumId));
+
+    return respond(200, { message: 'Album deleted' });
   }
 
   return respond(405, { message: 'Method not allowed' });

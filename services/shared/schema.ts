@@ -18,6 +18,8 @@ export const photos = pgTable('photos', {
   height: integer('height'),
   format: varchar('format', { length: 50 }),
   contentType: varchar('content_type', { length: 100 }),
+  status: varchar('status', { length: 20 }).notNull().default('pending'),
+  takenAt: timestamp('taken_at'),
   createdAt: timestamp('created_at').defaultNow(),
 });
 
