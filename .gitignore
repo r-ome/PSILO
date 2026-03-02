@@ -19,8 +19,8 @@ frontend/next-env.d.ts
 # ===========================
 infrastructure/cdk.out/
 infrastructure/build/
-infrastructure/*.js
-infrastructure/*.d.ts
+infrastructure/**/*.js
+infrastructure/**/*.d.ts
 infrastructure/tsconfig.tsbuildinfo
 infrastructure/.cdk.staging
 !infrastructure/jest.config.js  # don't ignore jest config
