@@ -75,14 +75,23 @@ export default function ImageViewer({
                   key={photo.id}
                   className="flex items-center justify-center p-8 pl-8! h-full"
                 >
-                  <Image
-                    src={photo.signedUrl}
-                    alt={photo.filename}
-                    width={photo.width ?? 1200}
-                    height={photo.height ?? 800}
-                    className="max-h-[calc(90vh-5rem)] max-w-full w-auto h-auto object-contain mx-auto xl:pt-4"
-                    unoptimized
-                  />
+                  {photo.contentType?.startsWith('video/') ? (
+                    <video
+                      controls
+                      className="max-h-[calc(90vh-5rem)] max-w-full w-auto mx-auto"
+                    >
+                      <source src={photo.signedUrl} type={photo.contentType} />
+                    </video>
+                  ) : (
+                    <Image
+                      src={photo.signedUrl}
+                      alt={photo.filename}
+                      width={photo.width ?? 1200}
+                      height={photo.height ?? 800}
+                      className="max-h-[calc(90vh-5rem)] max-w-full w-auto h-auto object-contain mx-auto xl:pt-4"
+                      unoptimized
+                    />
+                  )}
                 </CarouselItem>
               ))}
             </CarouselContent>

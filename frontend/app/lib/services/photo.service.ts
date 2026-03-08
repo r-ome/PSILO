@@ -1,5 +1,10 @@
 import { api } from "@/app/lib/api";
 
+export interface GroupedPhotosByDate {
+  date: string;
+  photos: Photo[];
+}
+
 export interface Photo {
   id: string;
   userId: string;
@@ -10,13 +15,16 @@ export interface Photo {
   height: number | null;
   format: string | null;
   contentType: string | null;
-  status: 'pending' | 'processing' | 'completed' | 'failed';
+  status: "pending" | "processing" | "completed" | "failed";
   createdAt: string | null;
+  takenAt: string | null;
   signedUrl: string;
 }
 
 export const photoService = {
   listPhotos: () => api.get<Photo[]>("/api/photos"),
   deletePhoto: (key: string) =>
-    api.delete<{ message: string }>(`/api/photos?key=${encodeURIComponent(key)}`),
+    api.delete<{ message: string }>(
+      `/api/photos?key=${encodeURIComponent(key)}`,
+    ),
 };

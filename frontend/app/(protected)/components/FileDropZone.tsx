@@ -1,5 +1,6 @@
 "use client";
 import { useRef, useState } from "react";
+import { toast } from "sonner";
 import Image from "next/image";
 import { Upload, Trash2 } from "lucide-react";
 import { Button } from "@/app/components/ui/button";
@@ -27,7 +28,14 @@ const FileDropZone: React.FC<FileDropZoneProps> = ({ onUploadComplete }) => {
   const handleFileSelect = async (files: FileList | null) => {
     if (!files) return;
 
-    const newFiles = Array.from(files);
+    const newFiles = Array.from(files).filter((file) => {
+      if (file.name.toLowerCase().endsWith('.avi') || file.type === 'video/x-msvideo' || file.type === 'video/avi') {
+        toast.error(`${file.name}: AVI files are not supported. Please convert to MP4 or MOV.`);
+        return false;
+      }
+      return true;
+    });
+    if (newFiles.length === 0) return;
     setUploadedFiles((prev) => [...prev, ...newFiles]);
 
     // Generate all presigned URLs upfront in parallel
@@ -99,7 +107,7 @@ const FileDropZone: React.FC<FileDropZoneProps> = ({ onUploadComplete }) => {
             id="fileUpload"
             ref={fileInputRef}
             className="hidden"
-            accept="image/*"
+            accept="image/*,video/*"
             multiple
             onChange={(e) => handleFileSelect(e.target.files)}
           />

@@ -40,11 +40,14 @@ export default function Page() {
 
   useEffect(() => {
     const hasInProgress = photos.some(
-      (p) => p.status === 'pending' || p.status === 'processing',
+      (p) => p.status === "pending" || p.status === "processing",
     );
     if (!hasInProgress) return;
     const id = setInterval(() => {
-      photoService.listPhotos().then(setPhotos).catch(() => {});
+      photoService
+        .listPhotos()
+        .then(setPhotos)
+        .catch(() => {});
     }, 3000);
     return () => clearInterval(id);
   }, [photos]);
@@ -124,7 +127,6 @@ export default function Page() {
       {photos.length > 0 && (
         <div>
           <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-semibold">Your Photos</h2>
             {selectedIds.size > 0 && (
               <div className="flex items-center gap-2">
                 <span className="text-sm text-muted-foreground">
