@@ -26,7 +26,6 @@ async function execute(sql: string) {
 }
 
 async function main() {
-  console.log({ CLUSTER_ARN });
   // Drop FK constraints that block inserts when user record doesn't exist yet
   const fixStatements = [
     `ALTER TABLE "photos" DROP CONSTRAINT IF EXISTS "photos_user_id_users_id_fk"`,

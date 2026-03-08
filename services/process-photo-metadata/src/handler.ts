@@ -120,7 +120,6 @@ export const handler = async (event: SQSEvent): Promise<SQSBatchResponse> => {
         height = metadata.height ?? null;
         format = metadata.format ?? null;
         takenAt = extractTakenAt(metadata.exif as Buffer | undefined, filename);
-        console.log({ takenAt, filename, metadata });
       }
 
       await db
