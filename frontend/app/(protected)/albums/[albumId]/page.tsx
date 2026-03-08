@@ -63,11 +63,14 @@ export default function AlbumDetailPage({
 
   useEffect(() => {
     const albumHasInProgress = album?.photos.some(
-      (p) => p.status === 'pending' || p.status === 'processing',
+      (p) => p.status === "pending" || p.status === "processing",
     );
     if (!albumHasInProgress) return;
     const id = setInterval(() => {
-      albumService.getAlbum(albumId).then(setAlbum).catch(() => {});
+      albumService
+        .getAlbum(albumId)
+        .then(setAlbum)
+        .catch(() => {});
     }, 3000);
     return () => clearInterval(id);
   }, [album, albumId]);
@@ -164,7 +167,7 @@ export default function AlbumDetailPage({
 
   const albumPhotoIds = new Set(album?.photos.map((p) => p.id) ?? []);
   const availablePhotos = allPhotos.filter(
-    (p) => !albumPhotoIds.has(p.id) && p.status === 'completed',
+    (p) => !albumPhotoIds.has(p.id) && p.status === "completed",
   );
 
   if (!album)

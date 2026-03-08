@@ -55,10 +55,7 @@ export default function PhotoGrid({
               {formatDate(item.date, "E MMM d, yyyy")}
             </div>
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
-              {item.photos.map((photo, index) => {
-                if (photo.status === "processing") {
-                  console.log(photo);
-                }
+              {item.photos.map((photo) => {
                 const isSelected = selectedIds.has(photo.id);
                 const isCompleted = photo.status === "completed";
                 const isFailed = photo.status === "failed";
@@ -79,7 +76,9 @@ export default function PhotoGrid({
                         isSelected && isCompleted ? "scale-90" : "",
                         isCompleted ? "cursor-pointer" : "cursor-default",
                       )}
-                      onClick={() => isCompleted && onPhotoClick(index)}
+                      onClick={() =>
+                        isCompleted && onPhotoClick(photos.indexOf(photo))
+                      }
                     >
                       {isCompleted ? (
                         <>

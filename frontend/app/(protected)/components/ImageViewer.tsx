@@ -26,6 +26,12 @@ export default function ImageViewer({
 }: ImageViewerProps) {
   const [api, setApi] = useState<CarouselApi>();
   const [currentIndex, setCurrentIndex] = useState(initialIndex ?? 0);
+  const [prevInitialIndex, setPrevInitialIndex] = useState(initialIndex);
+
+  if (prevInitialIndex !== initialIndex && initialIndex !== null) {
+    setPrevInitialIndex(initialIndex);
+    setCurrentIndex(initialIndex);
+  }
 
   useEffect(() => {
     if (api && initialIndex !== null) {
@@ -75,7 +81,7 @@ export default function ImageViewer({
                   key={photo.id}
                   className="flex items-center justify-center p-8 pl-8! h-full"
                 >
-                  {photo.contentType?.startsWith('video/') ? (
+                  {photo.contentType?.startsWith("video/") ? (
                     <video
                       controls
                       className="max-h-[calc(90vh-5rem)] max-w-full w-auto mx-auto"
