@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { cookies } from "next/headers";
 import { env } from "@/app/lib/env.server";
 import logger from "@/app/lib/logger";
+import { getValidToken } from "@/app/lib/auth/token";
 
 export async function POST(
   req: NextRequest,
@@ -10,8 +10,7 @@ export async function POST(
   const { albumId } = await params;
   logger.info({ method: "POST", route: `/api/albums/${albumId}/photos` }, "request");
 
-  const cookieStore = await cookies();
-  const accessToken = cookieStore.get("access_token")?.value;
+  const accessToken = await getValidToken("access_token");
   if (!accessToken) {
     return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
   }

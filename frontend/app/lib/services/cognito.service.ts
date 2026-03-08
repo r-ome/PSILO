@@ -74,4 +74,12 @@ export const cognitoService = {
         Password: body.password,
       }),
     ),
+  refreshTokens: (refreshToken: string) =>
+    cognitoClient.send(
+      new InitiateAuthCommand({
+        AuthFlow: "REFRESH_TOKEN_AUTH",
+        ClientId: COGNITO_APP_CLIENT_ID,
+        AuthParameters: { REFRESH_TOKEN: refreshToken },
+      }),
+    ),
 };

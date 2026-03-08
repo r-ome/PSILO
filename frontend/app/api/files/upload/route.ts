@@ -1,14 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import { cookies } from "next/headers";
 import { env } from "@/app/lib/env.server";
 import logger from "@/app/lib/logger";
+import { getValidToken } from "@/app/lib/auth/token";
 
 export async function POST(req: NextRequest) {
   logger.info({ method: "POST", route: "/api/files/upload" }, "request");
 
-  const cookieStore = await cookies();
-  // Use id_token so the Lambda receives given_name/family_name JWT claims
-  const idToken = cookieStore.get("id_token")?.value;
+  const idToken = await getValidToken("id_token");
 
   if (!idToken) {
     logger.info({ status: 401 }, "response");

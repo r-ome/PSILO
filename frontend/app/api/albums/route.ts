@@ -1,17 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import { cookies } from "next/headers";
 import { env } from "@/app/lib/env.server";
 import logger from "@/app/lib/logger";
-
-async function getAccessToken(): Promise<string | null> {
-  const cookieStore = await cookies();
-  return cookieStore.get("access_token")?.value ?? null;
-}
+import { getValidToken } from "@/app/lib/auth/token";
 
 export async function GET() {
   logger.info({ method: "GET", route: "/api/albums" }, "request");
 
-  const accessToken = await getAccessToken();
+  const accessToken = await getValidToken("access_token");
   if (!accessToken) {
     return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
   }
@@ -35,7 +30,7 @@ export async function GET() {
 export async function POST(req: NextRequest) {
   logger.info({ method: "POST", route: "/api/albums" }, "request");
 
-  const accessToken = await getAccessToken();
+  const accessToken = await getValidToken("access_token");
   if (!accessToken) {
     return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
   }
@@ -66,7 +61,7 @@ export async function POST(req: NextRequest) {
 export async function DELETE(req: NextRequest) {
   logger.info({ method: "DELETE", route: "/api/albums" }, "request");
 
-  const accessToken = await getAccessToken();
+  const accessToken = await getValidToken("access_token");
   if (!accessToken) {
     return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
   }
