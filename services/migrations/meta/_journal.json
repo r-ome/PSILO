@@ -29,6 +29,20 @@
       "when": 1772442126827,
       "tag": "0003_crazy_forgotten_one",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1772967870542,
+      "tag": "0004_fluffy_dragon_man",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1772970299816,
+      "tag": "0005_ambiguous_caretaker",
+      "breakpoints": true
     }
   ]
 }

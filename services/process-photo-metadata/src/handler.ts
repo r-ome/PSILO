@@ -70,7 +70,7 @@ export const handler = async (event: SQSEvent): Promise<SQSBatchResponse> => {
       const userId = parts[1].slice(-36); // UUID is always the last 36 chars
       const filename = parts.slice(2).join('/');
 
-      console.log(`Processing photo: ${key} for user: ${userId}`);
+      console.log(`Processing: ${key} for user: ${userId}`);
 
       // Phase 1: mark as processing (idempotent — handles SQS re-delivery)
       await db.insert(photos)
@@ -83,19 +83,26 @@ export const handler = async (event: SQSEvent): Promise<SQSBatchResponse> => {
       for await (const chunk of response.Body as AsyncIterable<Uint8Array>) {
         chunks.push(chunk);
       }
-      const metadata = await sharp(Buffer.concat(chunks)).metadata();
-      const takenAt = extractTakenAt(metadata.exif as Buffer | undefined, filename);
+      const contentType = response.ContentType ?? null;
+
+      let width: number | null = null;
+      let height: number | null = null;
+      let format: string | null = null;
+      let takenAt: Date | null = null;
+
+      if (!contentType?.startsWith('video/')) {
+        // Image: extract metadata via sharp
+        const metadata = await sharp(Buffer.concat(chunks)).metadata();
+        width = metadata.width ?? null;
+        height = metadata.height ?? null;
+        format = metadata.format ?? null;
+        takenAt = extractTakenAt(metadata.exif as Buffer | undefined, filename);
+      }
+      // Videos: width/height/duration left as null — UI renders via contentType
 
       // Phase 3: mark completed
       await db.update(photos)
-        .set({
-          status: 'completed',
-          width: metadata.width ?? null,
-          height: metadata.height ?? null,
-          format: metadata.format ?? null,
-          contentType: response.ContentType ?? null,
-          takenAt,
-        })
+        .set({ status: 'completed', width, height, format, contentType, takenAt })
         .where(eq(photos.s3Key, key));
 
       console.log(`Saved metadata for: ${key}`);
