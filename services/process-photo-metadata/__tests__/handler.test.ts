@@ -1,6 +1,6 @@
 import { SQSEvent, SQSBatchResponse } from 'aws-lambda';
 import { mockClient } from 'aws-sdk-client-mock';
-import { S3Client, GetObjectCommand } from '@aws-sdk/client-s3';
+import { S3Client, GetObjectCommand, HeadObjectCommand } from '@aws-sdk/client-s3';
 import { Readable } from 'stream';
 
 const s3Mock = mockClient(S3Client);
@@ -64,6 +64,8 @@ function makeSqsEvent(key: string, size = 12345): SQSEvent {
   };
 }
 
+const defaultLastModified = new Date('2024-01-15T12:00:00.000Z');
+
 function makeS3Body(): Readable {
   const stream = new Readable();
   stream.push(Buffer.from('fake-image-data'));
@@ -86,6 +88,7 @@ beforeEach(() => {
     format: 'jpeg',
     exif: undefined,
   });
+  s3Mock.on(HeadObjectCommand).resolves({ ContentType: 'image/jpeg', LastModified: defaultLastModified });
 });
 
 describe('process-photo-metadata handler', () => {
@@ -146,7 +149,7 @@ describe('process-photo-metadata handler', () => {
       expect.objectContaining({ set: { status: 'processing' } }),
     );
 
-    // Phase 3: update to completed (no EXIF, no date in filename → takenAt null)
+    // Phase 3: update to completed (no EXIF, no date in filename → takenAt falls back to S3 LastModified)
     expect(mockUpdate).toHaveBeenCalledWith('photos_table');
     expect(mockSet).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -155,7 +158,7 @@ describe('process-photo-metadata handler', () => {
         height: 1080,
         format: 'jpeg',
         contentType: 'image/jpeg',
-        takenAt: null,
+        takenAt: defaultLastModified,
       }),
     );
   });
@@ -223,7 +226,7 @@ describe('process-photo-metadata handler', () => {
     );
   });
 
-  it('sets takenAt to null for images without EXIF (e.g. PNG)', async () => {
+  it('falls back to S3 LastModified for images without EXIF (e.g. PNG)', async () => {
     mockSharpMetadata.mockResolvedValue({
       width: 100,
       height: 100,
@@ -233,7 +236,6 @@ describe('process-photo-metadata handler', () => {
 
     s3Mock.on(GetObjectCommand).resolves({
       Body: makeS3Body() as never,
-      ContentType: 'image/png',
     });
 
     const { handler } = await import('../src/handler');
@@ -241,7 +243,7 @@ describe('process-photo-metadata handler', () => {
 
     expect(mockExifReader).not.toHaveBeenCalled();
     expect(mockSet).toHaveBeenCalledWith(
-      expect.objectContaining({ takenAt: null }),
+      expect.objectContaining({ takenAt: defaultLastModified }),
     );
   });
 
@@ -325,17 +327,48 @@ describe('process-photo-metadata handler', () => {
     );
   });
 
-  it('sets takenAt to null when filename has no recognisable date (e.g. iOS IMG_1234)', async () => {
+  it('falls back to S3 LastModified when filename has no recognisable date (e.g. iOS IMG_1234)', async () => {
     s3Mock.on(GetObjectCommand).resolves({
       Body: makeS3Body() as never,
-      ContentType: 'image/jpeg',
     });
 
     const { handler } = await import('../src/handler');
     await handler(makeSqsEvent('users/u1/IMG_1234.jpg'));
 
     expect(mockSet).toHaveBeenCalledWith(
-      expect.objectContaining({ takenAt: null }),
+      expect.objectContaining({ takenAt: defaultLastModified }),
+    );
+  });
+
+  it('uses S3 LastModified as fallback when both EXIF and filename date are absent', async () => {
+    const customLastModified = new Date('2023-09-20T08:00:00.000Z');
+    s3Mock.on(HeadObjectCommand).resolves({ ContentType: 'image/jpeg', LastModified: customLastModified });
+    s3Mock.on(GetObjectCommand).resolves({
+      Body: makeS3Body() as never,
+    });
+
+    const { handler } = await import('../src/handler');
+    await handler(makeSqsEvent('users/u1/photo.jpg'));
+
+    expect(mockSet).toHaveBeenCalledWith(
+      expect.objectContaining({ takenAt: customLastModified }),
+    );
+  });
+
+  it('uses S3 LastModified for video files (no image processing)', async () => {
+    s3Mock.on(HeadObjectCommand).resolves({ ContentType: 'video/mp4', LastModified: defaultLastModified });
+
+    const { handler } = await import('../src/handler');
+    await handler(makeSqsEvent('users/u1/video.mp4'));
+
+    expect(mockSet).toHaveBeenCalledWith(
+      expect.objectContaining({
+        contentType: 'video/mp4',
+        takenAt: defaultLastModified,
+        width: null,
+        height: null,
+        format: null,
+      }),
     );
   });
 

@@ -125,6 +125,8 @@ export const handler = async (event: SQSEvent): Promise<SQSBatchResponse> => {
         takenAt = extractTakenAt(metadata.exif as Buffer | undefined, filename);
       }
 
+      takenAt = takenAt ?? head.LastModified ?? null;
+
       await db
         .update(photos)
         .set({
