@@ -1,5 +1,9 @@
 import { SQSEvent, SQSBatchResponse } from "aws-lambda";
-import { S3Client, GetObjectCommand, HeadObjectCommand } from "@aws-sdk/client-s3";
+import {
+  S3Client,
+  GetObjectCommand,
+  HeadObjectCommand,
+} from "@aws-sdk/client-s3";
 import { eq } from "drizzle-orm";
 import sharp from "sharp";
 import exifReader from "exif-reader";
@@ -27,7 +31,7 @@ function extractTakenAtFromFilename(filename: string): Date | null {
     const d = new Date(`${yr}-${mo}-${dy}T${hr}:${mn}:${sc}`);
     if (!isNaN(d.getTime()) && d.getFullYear() >= 2000) return d;
   }
-  // Android/Screenshot: IMG_20231215_103045.jpg, Screenshot_20231215-103045.jpg
+  // Android/Screenshot: IMG_20231215_103045.jpg, Screenshot_20231215-103045.jpg, 20191021_103725.jpg
   const withTime = filename.match(
     /(\d{4})(0[1-9]|1[0-2])(0[1-9]|[12]\d|3[01])[_\-](\d{2})(\d{2})(\d{2})/,
   );
@@ -61,6 +65,7 @@ function extractTakenAt(
       // fall through to filename
     }
   }
+  console.log(extractTakenAtFromFilename(filename));
   return extractTakenAtFromFilename(filename);
 }
 
@@ -125,7 +130,8 @@ export const handler = async (event: SQSEvent): Promise<SQSBatchResponse> => {
         takenAt = extractTakenAt(metadata.exif as Buffer | undefined, filename);
       }
 
-      takenAt = takenAt ?? head.LastModified ?? null;
+      takenAt =
+        extractTakenAt(undefined, filename) ?? head.LastModified ?? null;
 
       await db
         .update(photos)
