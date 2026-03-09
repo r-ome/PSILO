@@ -27,4 +27,6 @@ export const photoService = {
     api.delete<{ message: string }>(
       `/api/photos?key=${encodeURIComponent(key)}`,
     ),
+  updatePhotoTakenAt: (key: string, takenAt: string | null) =>
+    api.patch<Photo>(`/api/photos?key=${encodeURIComponent(key)}`, { takenAt }),
 };
