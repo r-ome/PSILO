@@ -9,10 +9,11 @@ import {
   DialogTrigger,
 } from "@/app/components/ui/dialog";
 import { Button } from "@/app/components/ui/button";
-import { Trash2, Upload } from "lucide-react";
+import { CalendarDays, Trash2, Upload } from "lucide-react";
 import FileDropZone from "@/app/(protected)/components/FileDropZone";
 import PhotoGrid from "@/app/(protected)/components/PhotoGrid";
 import DeleteConfirmDialog from "@/app/(protected)/components/DeleteConfirmDialog";
+import UpdateTakenAtDialog from "@/app/(protected)/components/UpdateTakenAtDialog";
 import ImageViewer from "@/app/(protected)/components/ImageViewer";
 import { photoService, Photo } from "@/app/lib/services/photo.service";
 
@@ -22,6 +23,8 @@ export default function Page() {
   const [viewerIndex, setViewerIndex] = useState<number | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkDeletePending, setBulkDeletePending] = useState(false);
+  const [photoToUpdate, setPhotoToUpdate] = useState<Photo | null>(null);
+  const [bulkUpdatePending, setBulkUpdatePending] = useState(false);
   const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
 
   const totalSizeMB = useMemo(() => {
@@ -108,6 +111,40 @@ export default function Page() {
     setUploadDialogOpen(true);
   };
 
+  const handleUpdateConfirm = async (takenAt: string | null) => {
+    if (!photoToUpdate) return;
+    const key = photoToUpdate.s3Key;
+    setPhotoToUpdate(null);
+    try {
+      const updated = await photoService.updatePhotoTakenAt(key, takenAt);
+      setPhotos((prev) =>
+        prev.map((p) =>
+          p.s3Key === updated.s3Key ? { ...p, takenAt: updated.takenAt } : p,
+        ),
+      );
+    } catch {
+      // ignore
+    }
+  };
+
+  const handleBulkUpdateConfirm = async (takenAt: string | null) => {
+    const toUpdate = photos.filter((p) => selectedIds.has(p.id));
+    setBulkUpdatePending(false);
+    setSelectedIds(new Set());
+    try {
+      await Promise.all(
+        toUpdate.map((p) => photoService.updatePhotoTakenAt(p.s3Key, takenAt)),
+      );
+      setPhotos((prev) =>
+        prev.map((p) =>
+          toUpdate.some((u) => u.id === p.id) ? { ...p, takenAt } : p,
+        ),
+      );
+    } catch {
+      // ignore
+    }
+  };
+
   const handleBulkDeleteConfirm = async () => {
     const toDelete = photos.filter((p) => selectedIds.has(p.id));
     setBulkDeletePending(false);
@@ -156,6 +193,14 @@ export default function Page() {
                   {selectedIds.size} selected
                 </span>
                 <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setBulkUpdatePending(true)}
+                >
+                  <CalendarDays className="h-4 w-4 mr-1" />
+                  Update date
+                </Button>
+                <Button
                   variant="destructive"
                   size="sm"
                   onClick={() => setBulkDeletePending(true)}
@@ -184,6 +229,16 @@ export default function Page() {
         </div>
       )}
 
+      <UpdateTakenAtDialog
+        photo={photoToUpdate}
+        onConfirm={handleUpdateConfirm}
+        onCancel={() => setPhotoToUpdate(null)}
+      />
+      <UpdateTakenAtDialog
+        bulkCount={bulkUpdatePending ? selectedIds.size : null}
+        onConfirm={handleBulkUpdateConfirm}
+        onCancel={() => setBulkUpdatePending(false)}
+      />
       <DeleteConfirmDialog
         photo={photoToDelete}
         onConfirm={handleDeleteConfirm}

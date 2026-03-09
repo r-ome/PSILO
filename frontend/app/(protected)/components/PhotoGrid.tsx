@@ -14,6 +14,7 @@ interface PhotoGridProps {
   onDeleteRequest: (photo: Photo) => void;
   onPhotoClick: (index: number) => void;
   onRetry?: (photo: Photo) => void;
+  onUpdateRequest?: (photo: Photo) => void;
 }
 
 function groupPhotosByDate(photos: Photo[]): GroupedPhotosByDate[] {

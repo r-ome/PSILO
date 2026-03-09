@@ -250,6 +250,7 @@ export class PsiloStack extends cdk.Stack {
           apigatewayv2.CorsHttpMethod.GET,
           apigatewayv2.CorsHttpMethod.POST,
           apigatewayv2.CorsHttpMethod.DELETE,
+          apigatewayv2.CorsHttpMethod.PATCH,
         ],
         allowHeaders: ["Authorization", "Content-Type"],
       },
@@ -287,7 +288,7 @@ export class PsiloStack extends cdk.Stack {
 
     httpApi.addRoutes({
       path: "/photos/{key+}",
-      methods: [apigatewayv2.HttpMethod.DELETE],
+      methods: [apigatewayv2.HttpMethod.DELETE, apigatewayv2.HttpMethod.PATCH],
       integration: managePhotosIntegration,
       authorizer: cognitoAuthorizer,
     });

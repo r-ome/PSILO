@@ -8,7 +8,7 @@ import {
   GetObjectCommand,
 } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
-import { eq, desc, sql } from "drizzle-orm";
+import { eq, desc, sql, and } from "drizzle-orm";
 import { createDb } from "../../shared/db";
 import { photos } from "../../shared/schema";
 
@@ -70,6 +70,27 @@ export const handler = async (
     await db.delete(photos).where(eq(photos.s3Key, key));
 
     return respond(200, { message: "Photo deleted" });
+  }
+
+  if (method === "PATCH") {
+    const key = event.pathParameters?.key;
+    if (!key) return respond(400, { message: "Missing photo key" });
+
+    const parts = key.split("/");
+    const userSegment = parts[1] ?? "";
+    const keyUserId = userSegment.slice(-36);
+    if (keyUserId !== sub) return respond(403, { message: "Forbidden" });
+
+    const body = JSON.parse(event.body ?? "{}");
+    const takenAt = body.takenAt ? new Date(body.takenAt) : null;
+
+    const [updated] = await db
+      .update(photos)
+      .set({ takenAt })
+      .where(and(eq(photos.s3Key, key), eq(photos.userId, sub)))
+      .returning();
+
+    return respond(200, updated);
   }
 
   return respond(405, { message: "Method not allowed" });
