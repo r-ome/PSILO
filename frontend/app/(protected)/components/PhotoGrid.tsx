@@ -2,7 +2,14 @@
 
 import { useMemo } from "react";
 import Image from "next/image";
-import { Check, Fullscreen, Trash2, Loader2, AlertCircle } from "lucide-react";
+import {
+  Check,
+  Fullscreen,
+  Trash2,
+  Loader2,
+  AlertCircle,
+  Search,
+} from "lucide-react";
 import { Button } from "@/app/components/ui/button";
 import { GroupedPhotosByDate, Photo } from "@/app/lib/services/photo.service";
 import { cn, formatDate } from "@/app/lib/utils";
@@ -15,6 +22,7 @@ interface PhotoGridProps {
   onPhotoClick: (index: number) => void;
   onRetry?: (photo: Photo) => void;
   onUpdateRequest?: (photo: Photo) => void;
+  selectMode?: boolean;
 }
 
 function groupPhotosByDate(photos: Photo[]): GroupedPhotosByDate[] {
@@ -44,6 +52,7 @@ export default function PhotoGrid({
   onDeleteRequest,
   onPhotoClick,
   onRetry,
+  selectMode = false,
 }: PhotoGridProps) {
   const groupedPhotos = useMemo(() => groupPhotosByDate(photos), [photos]);
 
@@ -75,11 +84,20 @@ export default function PhotoGrid({
                       className={cn(
                         "relative aspect-square bg-muted transition-transform duration-200",
                         isSelected && isCompleted ? "scale-90" : "",
-                        isCompleted ? "cursor-pointer" : "cursor-default",
+                        isCompleted && !selectMode
+                          ? "cursor-pointer"
+                          : isCompleted && selectMode
+                            ? "cursor-pointer"
+                            : "cursor-default",
                       )}
-                      onClick={() =>
-                        isCompleted && onPhotoClick(photos.indexOf(photo))
-                      }
+                      onClick={() => {
+                        if (!isCompleted) return;
+                        if (selectMode) {
+                          onToggleSelect(photo);
+                        } else {
+                          onPhotoClick(photos.indexOf(photo));
+                        }
+                      }}
                     >
                       {isCompleted ? (
                         <>
@@ -105,9 +123,11 @@ export default function PhotoGrid({
                               sizes="(max-width: 640px) 50vw, (max-width: 768px) 33vw, (max-width: 1024px) 25vw, 16vw"
                             />
                           )}
-                          <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 bg-black/20 transition-opacity">
-                            <Fullscreen className="h-5 w-5 text-white drop-shadow" />
-                          </div>
+                          {!selectMode ? (
+                            <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 bg-black/20 transition-opacity">
+                              <Fullscreen className="h-5 w-5 text-white drop-shadow" />
+                            </div>
+                          ) : null}
                         </>
                       ) : isProcessing ? (
                         <div className="absolute inset-0 flex flex-col items-center justify-center gap-1">
@@ -139,9 +159,13 @@ export default function PhotoGrid({
                         <button
                           className={cn(
                             "absolute top-1 left-1 h-5 w-5 rounded-full flex items-center justify-center transition-opacity z-10 cursor-pointer",
-                            isSelected
-                              ? "opacity-100 bg-primary"
-                              : "opacity-0 group-hover:opacity-100 bg-black/40 border border-white",
+                            selectMode
+                              ? isSelected
+                                ? "opacity-100 bg-primary"
+                                : "opacity-100 bg-black/40 border border-white"
+                              : isSelected
+                                ? "opacity-100 bg-primary"
+                                : "opacity-0 group-hover:opacity-100 bg-black/40 border border-white",
                           )}
                           onClick={(e) => {
                             e.stopPropagation();
@@ -166,6 +190,18 @@ export default function PhotoGrid({
                         >
                           <Trash2 className="h-3 w-3" />
                         </Button>
+                      )}
+
+                      {selectMode && isCompleted && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onPhotoClick(photos.indexOf(photo));
+                          }}
+                          className="absolute bottom-2 right-1 -translate-x-1/2 bg-black/60 rounded-full p-1 text-white opacity-0 group-hover:opacity-100 transition-opacity z-10 cursor-pointer"
+                        >
+                          <Search className="w-3 h-3" />
+                        </button>
                       )}
                     </div>
                   </div>

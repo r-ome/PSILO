@@ -9,7 +9,7 @@ import {
   DialogTrigger,
 } from "@/app/components/ui/dialog";
 import { Button } from "@/app/components/ui/button";
-import { CalendarDays, Trash2, Upload } from "lucide-react";
+import { CalendarDays, Trash2, Upload, CheckSquare, Square } from "lucide-react";
 import FileDropZone from "@/app/(protected)/components/FileDropZone";
 import PhotoGrid from "@/app/(protected)/components/PhotoGrid";
 import DeleteConfirmDialog from "@/app/(protected)/components/DeleteConfirmDialog";
@@ -26,6 +26,7 @@ export default function Page() {
   const [photoToUpdate, setPhotoToUpdate] = useState<Photo | null>(null);
   const [bulkUpdatePending, setBulkUpdatePending] = useState(false);
   const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
+  const [selectMode, setSelectMode] = useState(false);
 
   const totalSizeMB = useMemo(() => {
     const bytes = photos.reduce((sum, p) => sum + (p.size ?? 0), 0);
@@ -159,23 +160,49 @@ export default function Page() {
     }
   };
 
+  const handleToggleSelectMode = () => {
+    setSelectMode((prev) => !prev);
+    if (selectMode) setSelectedIds(new Set());
+  };
+
   return (
     <div className="space-y-8">
       <div className="flex justify-between items-center">
-        <Dialog open={uploadDialogOpen} onOpenChange={setUploadDialogOpen}>
-          <DialogTrigger asChild>
-            <Button>
-              <Upload className="h-4 w-4 mr-2" />
-              Upload Files
+        <div className="flex items-center gap-2">
+          <Dialog open={uploadDialogOpen} onOpenChange={setUploadDialogOpen}>
+            <DialogTrigger asChild>
+              <Button>
+                <Upload className="h-4 w-4 mr-2" />
+                Upload Files
+              </Button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Upload Your Files</DialogTitle>
+              </DialogHeader>
+              <FileDropZone onUploadComplete={handleUploadComplete} />
+            </DialogContent>
+          </Dialog>
+          {photos.length > 0 && (
+            <Button
+              variant={selectMode ? "default" : "outline"}
+              size="sm"
+              onClick={handleToggleSelectMode}
+            >
+              {selectMode ? (
+                <>
+                  <CheckSquare className="h-4 w-4 mr-2" />
+                  Done
+                </>
+              ) : (
+                <>
+                  <Square className="h-4 w-4 mr-2" />
+                  Select
+                </>
+              )}
             </Button>
-          </DialogTrigger>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Upload Your Files</DialogTitle>
-            </DialogHeader>
-            <FileDropZone onUploadComplete={handleUploadComplete} />
-          </DialogContent>
-        </Dialog>
+          )}
+        </div>
 
         <div className="text-sm text-muted-foreground font-semibold">
           {photosCount.video} video{photosCount.video !== 1 ? "s" : ""} ·{" "}
@@ -225,6 +252,7 @@ export default function Page() {
             onDeleteRequest={setPhotoToDelete}
             onPhotoClick={setViewerIndex}
             onRetry={handleRetry}
+            selectMode={selectMode}
           />
         </div>
       )}

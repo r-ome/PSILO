@@ -14,6 +14,7 @@ export async function GET() {
   try {
     const response = await fetch(`${env.BACKEND_API_URL}/photos`, {
       headers: { Authorization: `Bearer ${accessToken}` },
+      signal: AbortSignal.timeout(30000),
     });
 
     const data = await response.json();

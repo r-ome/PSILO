@@ -12,7 +12,7 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/app/components/ui/dialog";
-import { Trash2, Plus, Check } from "lucide-react";
+import { Trash2, Plus, Check, CheckSquare, Square } from "lucide-react";
 import {
   albumService,
   AlbumWithPhotos,
@@ -40,6 +40,7 @@ export default function AlbumDetailPage({
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkRemovePending, setBulkRemovePending] = useState(false);
   const [albumDeletePending, setAlbumDeletePending] = useState(false);
+  const [selectMode, setSelectMode] = useState(false);
 
   const loadAlbum = useCallback(async () => {
     try {
@@ -165,6 +166,11 @@ export default function AlbumDetailPage({
     }
   };
 
+  const handleToggleSelectMode = () => {
+    setSelectMode((prev) => !prev);
+    if (selectMode) setSelectedIds(new Set());
+  };
+
   const albumPhotoIds = new Set(album?.photos.map((p) => p.id) ?? []);
   const availablePhotos = allPhotos.filter(
     (p) => !albumPhotoIds.has(p.id) && p.status === "completed",
@@ -186,17 +192,38 @@ export default function AlbumDetailPage({
             <Trash2 className="h-4 w-4" />
           </Button>
         </div>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => {
-            setShowPicker(true);
-            setPickerSelectedIds(new Set());
-          }}
-        >
-          <Plus className="h-4 w-4 mr-1" />
-          Add Photos
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              setShowPicker(true);
+              setPickerSelectedIds(new Set());
+            }}
+          >
+            <Plus className="h-4 w-4 mr-1" />
+            Add Photos
+          </Button>
+          {album.photos.length > 0 && (
+            <Button
+              variant={selectMode ? "default" : "outline"}
+              size="sm"
+              onClick={handleToggleSelectMode}
+            >
+              {selectMode ? (
+                <>
+                  <CheckSquare className="h-4 w-4 mr-2" />
+                  Done
+                </>
+              ) : (
+                <>
+                  <Square className="h-4 w-4 mr-2" />
+                  Select
+                </>
+              )}
+            </Button>
+          )}
+        </div>
       </div>
 
       <Dialog
@@ -300,6 +327,7 @@ export default function AlbumDetailPage({
             onToggleSelect={handleToggleSelect}
             onDeleteRequest={setPhotoToRemove}
             onPhotoClick={setViewerIndex}
+            selectMode={selectMode}
           />
         </div>
       )}
