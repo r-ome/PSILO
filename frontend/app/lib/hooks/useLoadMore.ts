@@ -20,10 +20,13 @@ export function useLoadMore({
   useEffect(() => {
     const el = sentinelRef.current;
     if (!el) return;
+    if (isOpen === false) return;
 
-    // Defer observer setup to next frame to ensure DOM is ready
-    const timeoutId = requestAnimationFrame(() => {
-      const observer = new IntersectionObserver(
+    let observer: IntersectionObserver | null = null;
+
+    // Delay slightly to allow dialog open animations to complete before observing
+    const timeoutId = setTimeout(() => {
+      observer = new IntersectionObserver(
         (entries) => {
           if (entries[0].isIntersecting && nextCursor && !isLoadingMore) {
             onLoadMore();
@@ -34,13 +37,13 @@ export function useLoadMore({
           threshold: 0.1,
         },
       );
-
       observer.observe(el);
+    }, 150);
 
-      return () => observer.disconnect();
-    });
-
-    return () => cancelAnimationFrame(timeoutId);
+    return () => {
+      clearTimeout(timeoutId);
+      observer?.disconnect();
+    };
   }, [nextCursor, isLoadingMore, onLoadMore, isOpen]);
 
   return sentinelRef;

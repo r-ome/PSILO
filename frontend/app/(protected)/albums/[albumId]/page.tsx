@@ -45,6 +45,7 @@ export default function AlbumDetailPage({
   const [pickerNextCursor, setPickerNextCursor] = useState<string | null>(null);
   const [isLoadingMorePicker, setIsLoadingMorePicker] = useState(false);
   const pickerScrollContainerRef = useRef<HTMLDivElement>(null);
+  const prevShowPickerRef = useRef(false);
 
   const loadAlbum = useCallback(async () => {
     try {
@@ -204,6 +205,28 @@ export default function AlbumDetailPage({
     isOpen: showPicker,
   });
 
+  // When the dialog opens, explicitly check if the sentinel is already visible
+  // and trigger load-more immediately — IntersectionObserver alone is unreliable
+  // during the dialog's open animation.
+  useEffect(() => {
+    const justOpened = showPicker && !prevShowPickerRef.current;
+    prevShowPickerRef.current = showPicker;
+    if (!justOpened) return;
+
+    const timeoutId = setTimeout(() => {
+      const container = pickerScrollContainerRef.current;
+      const sentinel = pickerSentinelRef.current;
+      if (!container || !sentinel) return;
+      const { bottom: sentinelBottom } = sentinel.getBoundingClientRect();
+      const { bottom: containerBottom } = container.getBoundingClientRect();
+      if (sentinelBottom <= containerBottom) {
+        loadMorePhotosForPicker();
+      }
+    }, 200);
+
+    return () => clearTimeout(timeoutId);
+  }, [showPicker, loadMorePhotosForPicker, pickerSentinelRef]);
+
   if (!album)
     return <p className="text-sm text-muted-foreground">Loading...</p>;
 
@@ -260,51 +283,49 @@ export default function AlbumDetailPage({
           if (!open) {
             setShowPicker(false);
             setPickerSelectedIds(new Set());
-            setPickerNextCursor(null);
-            setIsLoadingMorePicker(false);
           }
         }}
       >
-        <DialogContent className="max-w-2xl max-h-[80vh] flex flex-col overflow-hidden">
-          <DialogHeader>
+        <DialogContent className="w-[640px] h-[80vh] flex flex-col">
+          <DialogHeader className="flex-shrink-0">
             <DialogTitle>Add Photos to {album.name}</DialogTitle>
           </DialogHeader>
-          <div className="flex-1 overflow-hidden flex flex-col">
+          <div
+            ref={pickerScrollContainerRef}
+            className="flex-1 overflow-y-auto min-h-0"
+          >
             {availablePhotos.length === 0 ? (
               <p className="text-sm text-muted-foreground py-4">
                 No photos available to add.
               </p>
             ) : (
-              <div
-                ref={pickerScrollContainerRef}
-                className="grid grid-cols-3 sm:grid-cols-4 gap-3 overflow-y-auto py-2 flex-1"
-              >
-              {availablePhotos.map((photo) => {
-                const selected = pickerSelectedIds.has(photo.id);
-                return (
-                  <button
-                    key={photo.id}
-                    className={`relative rounded overflow-hidden border-2 transition-colors text-left hover:cursor-pointer ${selected ? "border-primary" : "border-transparent"}`}
-                    onClick={() => handlePickerToggle(photo.id)}
-                  >
-                    <div className="relative aspect-square bg-muted">
-                      <Image
-                        src={photo.contentType?.startsWith("video/") ? (photo.signedUrl || "") : (photo.thumbnailUrl || "")}
-                        alt={photo.filename}
-                        fill
-                        className="object-cover"
-                        sizes="(max-width: 640px) 33vw, 25vw"
-                      />
-                    </div>
-                    {selected && (
-                      <div className="absolute top-1 left-1 bg-primary text-primary-foreground rounded-full p-0.5">
-                        <Check className="h-3 w-3" />
+              <div className="grid grid-cols-3 sm:grid-cols-4 gap-3 py-2">
+                {availablePhotos.map((photo) => {
+                  const selected = pickerSelectedIds.has(photo.id);
+                  return (
+                    <button
+                      key={photo.id}
+                      className={`relative rounded overflow-hidden border-2 transition-colors text-left hover:cursor-pointer ${selected ? "border-primary" : "border-transparent"}`}
+                      onClick={() => handlePickerToggle(photo.id)}
+                    >
+                      <div className="relative aspect-square bg-muted">
+                        <Image
+                          src={photo.contentType?.startsWith("video/") ? (photo.signedUrl || "") : (photo.thumbnailUrl || "")}
+                          alt={photo.filename}
+                          fill
+                          className="object-cover"
+                          sizes="(max-width: 640px) 33vw, 25vw"
+                        />
                       </div>
-                    )}
-                  </button>
-                );
-              })}
-                <div ref={pickerSentinelRef} className="h-4" />
+                      {selected && (
+                        <div className="absolute top-1 left-1 bg-primary text-primary-foreground rounded-full p-0.5">
+                          <Check className="h-3 w-3" />
+                        </div>
+                      )}
+                    </button>
+                  );
+                })}
+                <div ref={pickerSentinelRef} className="col-span-full h-4" />
               </div>
             )}
             {isLoadingMorePicker && (
