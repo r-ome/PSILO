@@ -192,3 +192,9 @@ Frontend (`.env.local`):
 
 - This project uses TypeScript with Next.js and AWS CDK. Always run tests (`npm test` or equivalent) after modifying test files or code that has test coverage. Ensure jest types are included in tsconfig for test files.
 - Be careful with server-only imports (e.g., `import 'server-only'`) in utility modules — they will break Jest tests. Keep test-compatible code separate from server-only modules.
+
+## Git Workflow
+
+- **Do NOT automatically git add and commit changes.** Wait for explicit instructions from the user before committing.
+- After making code changes, inform the user of what was changed and ask if they'd like you to commit.
+- Only commit when the user explicitly says "commit", "create a commit", or similar.
