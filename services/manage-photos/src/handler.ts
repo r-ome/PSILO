@@ -4,12 +4,10 @@ import {
 } from "aws-lambda";
 import {
   S3Client,
-  DeleteObjectCommand,
-  DeleteObjectsCommand,
   GetObjectCommand,
 } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
-import { eq, desc, sql, and, or, lt, inArray } from "drizzle-orm";
+import { eq, desc, sql, and, or, lt, inArray, isNull } from "drizzle-orm";
 import { createDb } from "../../shared/db";
 import { photos } from "../../shared/schema";
 
@@ -88,7 +86,7 @@ export const handler = async (
     const limit =
       Math.min(parseInt(event.queryStringParameters?.limit ?? "10"), 100) || 30;
 
-    let query = db.select().from(photos).where(eq(photos.userId, sub));
+    let query = db.select().from(photos).where(and(eq(photos.userId, sub), isNull(photos.deletedAt)));
 
     if (cursor) {
       try {
@@ -102,6 +100,7 @@ export const handler = async (
           .where(
             and(
               eq(photos.userId, sub),
+              isNull(photos.deletedAt),
               or(
                 lt(
                   sql`COALESCE(${photos.takenAt}, ${photos.createdAt})`,
@@ -208,13 +207,8 @@ export const handler = async (
             return respond(403, { message: "Forbidden" });
           }
         }
-        await s3.send(
-          new DeleteObjectsCommand({
-            Bucket: BUCKET_NAME,
-            Delete: { Objects: keys.map((Key) => ({ Key })) },
-          }),
-        );
-        await db.delete(photos).where(inArray(photos.s3Key, keys));
+        await db.update(photos).set({ deletedAt: new Date() })
+          .where(and(inArray(photos.s3Key, keys), eq(photos.userId, sub)));
         return respond(200, { message: "Photos deleted" });
       }
     }
@@ -232,8 +226,8 @@ export const handler = async (
       return respond(403, { message: "Forbidden" });
     }
 
-    await s3.send(new DeleteObjectCommand({ Bucket: BUCKET_NAME, Key: key }));
-    await db.delete(photos).where(eq(photos.s3Key, key));
+    await db.update(photos).set({ deletedAt: new Date() })
+      .where(and(eq(photos.s3Key, key), eq(photos.userId, sub)));
 
     return respond(200, { message: "Photo deleted" });
   }

@@ -1,7 +1,7 @@
 import { APIGatewayProxyEventV2WithJWTAuthorizer, APIGatewayProxyResultV2 } from 'aws-lambda';
 import { S3Client, GetObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
-import { eq, and, inArray, desc, isNotNull } from 'drizzle-orm';
+import { eq, and, inArray, desc, isNotNull, isNull } from 'drizzle-orm';
 import { createDb } from '../../shared/db';
 import { albums, albumPhotos, photos } from '../../shared/schema';
 
@@ -58,6 +58,7 @@ export const handler = async (
           inArray(albumPhotos.albumId, albumIds),
           isNotNull(photos.thumbnailKey),
           eq(photos.status, 'completed'),
+          isNull(photos.deletedAt),
         ),
       )
       .orderBy(desc(albumPhotos.addedAt));
@@ -97,7 +98,7 @@ export const handler = async (
       .select({ photo: photos })
       .from(albumPhotos)
       .innerJoin(photos, eq(albumPhotos.photoId, photos.id))
-      .where(eq(albumPhotos.albumId, albumId));
+      .where(and(eq(albumPhotos.albumId, albumId), isNull(photos.deletedAt)));
 
     const photosWithUrls = await Promise.all(
       albumPhotosList.map(async ({ photo }) => {

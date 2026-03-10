@@ -34,6 +34,7 @@ export const photos = pgTable(
     storageClass: varchar("storage_class", { length: 20 }).notNull().default("STANDARD"),
     takenAt: timestamp("taken_at"),
     createdAt: timestamp("created_at").defaultNow(),
+    deletedAt: timestamp("deleted_at"),
   },
   (table) => ({
     userIdIdx: index("idx_photos_user_id").on(table.userId),

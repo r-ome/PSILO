@@ -1,5 +1,5 @@
 import { mockClient } from 'aws-sdk-client-mock';
-import { S3Client, DeleteObjectCommand } from '@aws-sdk/client-s3';
+import { S3Client } from '@aws-sdk/client-s3';
 import {
   APIGatewayProxyEventV2WithJWTAuthorizer,
   APIGatewayProxyStructuredResultV2,
@@ -35,6 +35,8 @@ jest.mock('drizzle-orm', () => ({
   or: jest.fn((...args) => ({ or: args })),
   lt: jest.fn((col, val) => ({ col, val })),
   sql: jest.fn((strings, ...values) => ({ sql: strings, values })),
+  inArray: jest.fn((col, vals) => ({ inArray: { col, vals } })),
+  isNull: jest.fn((col) => ({ isNull: col })),
 }));
 
 const mockGetSignedUrl = jest.fn();
@@ -153,9 +155,7 @@ describe('manage-photos handler', () => {
   });
 
   describe('DELETE /photos/{key+}', () => {
-    it('deletes photo from S3 and DB', async () => {
-      s3Mock.on(DeleteObjectCommand).resolves({});
-
+    it('soft-deletes photo (sets deletedAt, no S3 deletion)', async () => {
       // sub is 'u1' padded to simulate a 36-char UUID as the last part of the segment
       const sub = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
       const key = `users/John-Doe-${sub}/photos/photo.jpg`;
@@ -165,23 +165,23 @@ describe('manage-photos handler', () => {
       );
 
       expect(result.statusCode).toBe(200);
-      const s3Calls = s3Mock.commandCalls(DeleteObjectCommand);
-      expect(s3Calls).toHaveLength(1);
-      expect(s3Calls[0].args[0].input).toMatchObject({ Key: key });
-      expect(mockDelete).toHaveBeenCalledWith('photos_table');
+      // No S3 delete calls
+      expect(s3Mock.calls()).toHaveLength(0);
+      // DB update with deletedAt
+      expect(mockUpdate).toHaveBeenCalledWith('photos_table');
+      expect(mockSet).toHaveBeenCalledWith(expect.objectContaining({ deletedAt: expect.any(Date) }));
+      expect(mockDelete).not.toHaveBeenCalled();
     });
 
     it('returns 403 when key does not belong to user', async () => {
-      // sub is 'u1' (36 chars not matching), userSegment ends with a different userId
       const result = await callHandler(
         makeEvent('DELETE', 'DELETE /photos/{key+}', 'u1', {
-          // Last 36 chars of userSegment = 'other-user-000000000000000000000000'
           key: 'users/John-Doe-000000000000000000000000000000000000/photos/photo.jpg',
         }),
       );
 
       expect(result.statusCode).toBe(403);
-      expect(s3Mock.commandCalls(DeleteObjectCommand)).toHaveLength(0);
+      expect(mockUpdate).not.toHaveBeenCalled();
     });
 
     it('returns 400 when key is missing', async () => {

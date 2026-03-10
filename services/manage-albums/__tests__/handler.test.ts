@@ -46,6 +46,7 @@ jest.mock('drizzle-orm', () => ({
   inArray: jest.fn((col, vals) => ({ inArray: { col, vals } })),
   desc: jest.fn((col) => ({ desc: col })),
   isNotNull: jest.fn((col) => ({ isNotNull: col })),
+  isNull: jest.fn((col) => ({ isNull: col })),
 }));
 
 jest.mock('@aws-sdk/s3-request-presigner', () => ({

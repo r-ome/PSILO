@@ -290,6 +290,24 @@ export class PsiloStack extends cdk.Stack {
       new targets.LambdaFunction(lifecycleTransitionFn),
     );
 
+    const purgeDeletedPhotosFn = new NodejsFunction(this, "PurgeDeletedPhotosFn", {
+      entry: path.join(__dirname, "../../services/purge-deleted-photos/src/handler.ts"),
+      handler: "handler",
+      runtime: lambda.Runtime.NODEJS_22_X,
+      environment: { BUCKET_NAME: userBucket.bucketName, ...dbEnv },
+      timeout: cdk.Duration.minutes(5),
+      bundling: { esbuildVersion: "0.21" },
+    });
+    userBucket.grantDelete(purgeDeletedPhotosFn);
+    dbCluster.grantDataApiAccess(purgeDeletedPhotosFn);
+    dbSecret.grantRead(purgeDeletedPhotosFn);
+
+    const dailyPurgeRule = new events.Rule(this, "DailyPurgeCronRule", {
+      schedule: events.Schedule.rate(cdk.Duration.days(1)),
+      description: "Daily purge of soft-deleted photos past 90-day retention",
+    });
+    dailyPurgeRule.addTarget(new targets.LambdaFunction(purgeDeletedPhotosFn));
+
     const managePhotosFn = new NodejsFunction(this, "ManagePhotosFn", {
       entry: path.join(
         __dirname,
