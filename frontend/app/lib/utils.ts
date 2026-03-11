@@ -12,9 +12,8 @@ export function formatDate(
 ): string | null {
   if (!value) return null;
 
-  const date = typeof value === "string" ? new Date(value) : value;
-
-  if (isNaN(date.getTime())) return null;
+  const date =
+    typeof value === "string" ? new Date(value).toLocaleString() : value;
 
   return format(date, formatString);
 }

@@ -9,6 +9,11 @@ export interface DownloadResult {
 }
 
 export const downloadService = {
-  requestDownload: (keys: string[], tier?: GlacierTier): Promise<DownloadResult> =>
-    api.post<DownloadResult>("/api/files/restore", { keys, tier }),
+  requestDownload: (
+    keys: string[],
+    tier?: GlacierTier,
+    albumId?: string,
+    batchType?: string,
+  ): Promise<DownloadResult> =>
+    api.post<DownloadResult>("/api/files/restore", { keys, tier, albumId, batchType }),
 };

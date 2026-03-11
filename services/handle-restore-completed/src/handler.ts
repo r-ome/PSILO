@@ -6,9 +6,9 @@ import {
   AdminGetUserCommand,
 } from "@aws-sdk/client-cognito-identity-provider";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
-import { eq } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 import { createDb } from "../../shared/db";
-import { photos, users } from "../../shared/schema";
+import { photos, users, retrievalBatches, retrievalRequests } from "../../shared/schema";
 
 const s3 = new S3Client({});
 const ses = new SESClient({});
@@ -16,6 +16,7 @@ const cognito = new CognitoIdentityProviderClient({});
 const BUCKET_NAME = process.env.BUCKET_NAME!;
 const SES_FROM_EMAIL = process.env.SES_FROM_EMAIL!;
 const USER_POOL_ID = process.env.USER_POOL_ID!;
+const RESTORE_RETENTION_DAYS = parseInt(process.env.RESTORE_RETENTION_DAYS ?? "7", 10);
 
 interface S3RestoreCompletedDetail {
   bucket: { name: string };
@@ -70,6 +71,7 @@ export const handler = async (
     }
   }
 
+  const retentionSeconds = RESTORE_RETENTION_DAYS * 24 * 3600;
   const downloadUrl = await getSignedUrl(
     s3,
     new GetObjectCommand({
@@ -77,7 +79,7 @@ export const handler = async (
       Key: s3Key,
       ResponseContentDisposition: `attachment; filename="${photo.filename}"`,
     }),
-    { expiresIn: 7 * 24 * 3600 }, // 7 days
+    { expiresIn: retentionSeconds },
   );
 
   await ses.send(
@@ -92,12 +94,12 @@ export const handler = async (
               <p>Hi ${givenName},</p>
               <p>Your photo <strong>${photo.filename}</strong> has been restored from Glacier and is ready to download.</p>
               <p><a href="${downloadUrl}">Download your photo</a></p>
-              <p>This link expires in 7 days.</p>
+              <p>This link expires in ${RESTORE_RETENTION_DAYS} days.</p>
               <p>— Psilo</p>
             `,
           },
           Text: {
-            Data: `Hi ${givenName},\n\nYour photo "${photo.filename}" has been restored from Glacier and is ready to download:\n\n${downloadUrl}\n\nThis link expires in 7 days.\n\n— Psilo`,
+            Data: `Hi ${givenName},\n\nYour photo "${photo.filename}" has been restored from Glacier and is ready to download:\n\n${downloadUrl}\n\nThis link expires in ${RESTORE_RETENTION_DAYS} days.\n\n— Psilo`,
           },
         },
       },
@@ -105,4 +107,40 @@ export const handler = async (
   );
 
   console.log(`Sent restore notification to ${email} for ${s3Key}`);
+
+  // Update retrieval tracking records
+  const now = new Date();
+  const expiresAt = new Date(now.getTime() + RESTORE_RETENTION_DAYS * 24 * 3600 * 1000);
+
+  const updatedRequests = await db
+    .update(retrievalRequests)
+    .set({ status: "AVAILABLE", availableAt: now, expiresAt, retrievalLink: downloadUrl })
+    .where(
+      and(
+        eq(retrievalRequests.s3Key, s3Key),
+        eq(retrievalRequests.status, "PENDING"),
+      ),
+    )
+    .returning();
+
+  // Recalculate status for each affected batch
+  const affectedBatchIds = [...new Set(updatedRequests.map((r) => r.batchId))];
+  for (const batchId of affectedBatchIds) {
+    const allRequests = await db
+      .select()
+      .from(retrievalRequests)
+      .where(eq(retrievalRequests.batchId, batchId));
+
+    const allAvailable = allRequests.every((r) => r.status === "AVAILABLE");
+    const someAvailable = allRequests.some((r) => r.status === "AVAILABLE");
+    const newBatchStatus = allAvailable ? "AVAILABLE" : someAvailable ? "PARTIAL" : "PENDING";
+
+    await db
+      .update(retrievalBatches)
+      .set({
+        status: newBatchStatus,
+        ...(allAvailable ? { availableAt: now } : {}),
+      })
+      .where(eq(retrievalBatches.id, batchId));
+  }
 };

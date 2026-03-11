@@ -56,6 +56,14 @@ export const NavBar = () => {
 
             <NavigationMenuItem>
               <NavigationMenuLink asChild>
+                <Link href="/restore-requests">
+                  <Button variant="link">Restores</Button>
+                </Link>
+              </NavigationMenuLink>
+            </NavigationMenuItem>
+
+            <NavigationMenuItem>
+              <NavigationMenuLink asChild>
                 <Button variant="link" onClick={logout}>
                   Logout
                 </Button>

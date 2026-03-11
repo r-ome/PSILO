@@ -12,7 +12,7 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/app/components/ui/dialog";
-import { Trash2, Pencil, Plus, Check, CheckSquare, Square, Download, Loader2Icon, CalendarDays } from "lucide-react";
+import { Trash2, Pencil, Plus, Check, CheckSquare, Square, Download, Loader2Icon, CalendarDays, ArchiveRestore } from "lucide-react";
 import {
   albumService,
   AlbumWithPhotos,
@@ -25,6 +25,8 @@ import DownloadModal from "@/app/(protected)/components/DownloadModal";
 import ImageViewer from "@/app/(protected)/components/ImageViewer";
 import EditAlbumDialog from "@/app/(protected)/albums/[albumId]/EditAlbumDialog";
 import { useLoadMore } from "@/app/lib/hooks/useLoadMore";
+import { downloadService, GlacierTier } from "@/app/lib/services/download.service";
+import { toast } from "sonner";
 
 export default function AlbumDetailPage({
   params,
@@ -51,6 +53,9 @@ export default function AlbumDetailPage({
   const [isAddingPhotos, setIsAddingPhotos] = useState(false);
   const [albumToEdit, setAlbumToEdit] = useState<AlbumWithPhotos | null>(null);
   const [photoToUpdate, setPhotoToUpdate] = useState<Photo | null>(null);
+  const [restoreAlbumOpen, setRestoreAlbumOpen] = useState(false);
+  const [restoreAlbumTier, setRestoreAlbumTier] = useState<GlacierTier>("Standard");
+  const [restoreAlbumLoading, setRestoreAlbumLoading] = useState(false);
   const [bulkUpdatePending, setBulkUpdatePending] = useState(false);
   const pickerScrollContainerRef = useRef<HTMLDivElement>(null);
   const prevShowPickerRef = useRef(false);
@@ -249,6 +254,29 @@ export default function AlbumDetailPage({
     }
   };
 
+  const handleRestoreAlbum = async () => {
+    if (!album) return;
+    const glacierPhotos = album.photos.filter((p) => p.storageClass === "GLACIER");
+    if (glacierPhotos.length === 0) return;
+    setRestoreAlbumLoading(true);
+    try {
+      await downloadService.requestDownload(
+        glacierPhotos.map((p) => p.s3Key),
+        restoreAlbumTier,
+        albumId,
+        "ALBUM",
+      );
+      setRestoreAlbumOpen(false);
+      toast.success(
+        `Restore initiated for ${glacierPhotos.length} photo${glacierPhotos.length !== 1 ? "s" : ""}. Check Restore Requests page for status.`,
+      );
+    } catch {
+      toast.error("Failed to initiate restore. Please try again.");
+    } finally {
+      setRestoreAlbumLoading(false);
+    }
+  };
+
   const albumPhotoIds = new Set(album?.photos.map((p) => p.id) ?? []);
   const availablePhotos = allPhotos.filter(
     (p) => !albumPhotoIds.has(p.id) && p.status === "completed",
@@ -320,6 +348,16 @@ export default function AlbumDetailPage({
             >
               <Download className="h-4 w-4 mr-1" />
               Download Album
+            </Button>
+          )}
+          {album.photos.some((p) => p.storageClass === "GLACIER") && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setRestoreAlbumOpen(true)}
+            >
+              <ArchiveRestore className="h-4 w-4 mr-1" />
+              Restore Album
             </Button>
           )}
           <Button
@@ -525,6 +563,53 @@ export default function AlbumDetailPage({
         onClose={() => setAlbumDownloadOpen(false)}
         photos={album.photos}
       />
+      <Dialog open={restoreAlbumOpen} onOpenChange={setRestoreAlbumOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Restore Glacier Photos</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <p className="text-sm text-muted-foreground">
+              {album.photos.filter((p) => p.storageClass === "GLACIER").length} photo
+              {album.photos.filter((p) => p.storageClass === "GLACIER").length !== 1 ? "s are" : " is"} archived in Glacier. Select a restore tier:
+            </p>
+            <div className="space-y-2">
+              {(
+                [
+                  { id: "Expedited" as GlacierTier, label: "Expedited", speed: "1–5 minutes", cost: "$0.03/GB + $0.01/1,000 requests" },
+                  { id: "Standard" as GlacierTier, label: "Standard", speed: "3–5 hours", cost: "$0.01/GB + $0.05/1,000 requests" },
+                  { id: "Bulk" as GlacierTier, label: "Bulk", speed: "5–12 hours", cost: "$0.025/1,000 requests" },
+                ]
+              ).map((tier) => (
+                <button
+                  key={tier.id}
+                  onClick={() => setRestoreAlbumTier(tier.id)}
+                  className={`w-full text-left rounded-lg border p-3 transition-colors ${
+                    restoreAlbumTier === tier.id
+                      ? "border-primary bg-primary/5"
+                      : "border-border hover:border-primary/50"
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="font-medium text-sm">{tier.label}</span>
+                    <span className="text-xs text-muted-foreground">{tier.speed}</span>
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-0.5">{tier.cost}</p>
+                </button>
+              ))}
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRestoreAlbumOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handleRestoreAlbum} disabled={restoreAlbumLoading}>
+              {restoreAlbumLoading && <Loader2Icon className="h-4 w-4 mr-2 animate-spin" />}
+              Request Restore
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
       <EditAlbumDialog
         album={albumToEdit}
         onCancel={() => setAlbumToEdit(null)}

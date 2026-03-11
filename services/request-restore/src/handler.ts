@@ -11,10 +11,15 @@ import {
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { eq, and, inArray } from "drizzle-orm";
 import { createDb } from "../../shared/db";
-import { photos } from "../../shared/schema";
+import {
+  photos,
+  retrievalBatches,
+  retrievalRequests,
+} from "../../shared/schema";
 
 const s3 = new S3Client({});
 const BUCKET_NAME = process.env.BUCKET_NAME!;
+const RESTORE_RETENTION_DAYS = parseInt(process.env.RESTORE_RETENTION_DAYS ?? "7", 10);
 
 function respond(statusCode: number, body: unknown): APIGatewayProxyResultV2 {
   return {
@@ -39,14 +44,19 @@ export const handler = async (
 ): Promise<APIGatewayProxyResultV2> => {
   const sub = event.requestContext.authorizer.jwt.claims["sub"] as string;
 
-  let body: { keys?: string[]; tier?: string };
+  let body: {
+    keys?: string[];
+    tier?: string;
+    albumId?: string;
+    batchType?: string;
+  };
   try {
     body = JSON.parse(event.body ?? "{}");
   } catch {
     return respond(400, { message: "Invalid JSON body" });
   }
 
-  const { keys, tier = "Standard" } = body;
+  const { keys, tier = "Standard", albumId, batchType } = body;
 
   if (!keys || !Array.isArray(keys) || keys.length === 0) {
     return respond(400, { message: "keys array is required" });
@@ -65,6 +75,7 @@ export const handler = async (
   }
 
   const standardUrls: { key: string; url: string }[] = [];
+  const glacierPhotosTracking: Array<{ photo: (typeof dbPhotos)[0] }> = [];
   let glacierInitiated = false;
   let glacierAlreadyInProgress = false;
 
@@ -102,7 +113,7 @@ export const handler = async (
               Bucket: BUCKET_NAME,
               Key: photo.s3Key,
               RestoreRequest: {
-                Days: 7,
+                Days: RESTORE_RETENTION_DAYS,
                 GlacierJobParameters: {
                   Tier: tier as "Expedited" | "Standard" | "Bulk",
                 },
@@ -110,6 +121,7 @@ export const handler = async (
             }),
           );
           glacierInitiated = true;
+          glacierPhotosTracking.push({ photo });
         } catch (err: unknown) {
           if (
             err &&
@@ -118,6 +130,7 @@ export const handler = async (
             err.name === "RestoreAlreadyInProgress"
           ) {
             glacierAlreadyInProgress = true;
+            glacierPhotosTracking.push({ photo });
           } else {
             throw err;
           }
@@ -126,5 +139,44 @@ export const handler = async (
     }),
   );
 
-  return respond(200, { standardUrls, glacierInitiated, glacierAlreadyInProgress });
+  // Create tracking records if any Glacier restores were initiated or already in progress
+  if (glacierPhotosTracking.length > 0) {
+    const detectedBatchType =
+      batchType ?? (keys.length === 1 ? "SINGLE" : "MANUAL");
+    const tierUppercase = tier.toUpperCase();
+    const totalSize = glacierPhotosTracking.reduce(
+      (sum, { photo }) => sum + (photo.size ?? 0),
+      0,
+    );
+
+    const [batch] = await db
+      .insert(retrievalBatches)
+      .values({
+        userId: sub,
+        batchType: detectedBatchType,
+        sourceId: albumId ?? null,
+        retrievalTier: tierUppercase,
+        status: "PENDING",
+        totalFiles: glacierPhotosTracking.length,
+        totalSize,
+      })
+      .returning();
+
+    await db.insert(retrievalRequests).values(
+      glacierPhotosTracking.map(({ photo }) => ({
+        batchId: batch.id,
+        userId: sub,
+        photoId: photo.id,
+        s3Key: photo.s3Key,
+        fileSize: photo.size ?? 0,
+        status: "PENDING",
+      })),
+    );
+  }
+
+  return respond(200, {
+    standardUrls,
+    glacierInitiated,
+    glacierAlreadyInProgress,
+  });
 };

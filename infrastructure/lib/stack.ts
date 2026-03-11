@@ -365,7 +365,7 @@ export class PsiloStack extends cdk.Stack {
       ),
       handler: "handler",
       runtime: lambda.Runtime.NODEJS_22_X,
-      environment: { BUCKET_NAME: userBucket.bucketName, ...dbEnv },
+      environment: { BUCKET_NAME: userBucket.bucketName, RESTORE_RETENTION_DAYS: "7", ...dbEnv },
       timeout: cdk.Duration.seconds(29),
       bundling: { esbuildVersion: "0.21" },
     });
@@ -393,6 +393,7 @@ export class PsiloStack extends cdk.Stack {
           BUCKET_NAME: userBucket.bucketName,
           SES_FROM_EMAIL: "jerome.arceo.agapay@gmail.com",
           USER_POOL_ID: userPool.userPoolId,
+          RESTORE_RETENTION_DAYS: "7",
           ...dbEnv,
         },
         timeout: cdk.Duration.seconds(30),
@@ -429,6 +430,20 @@ export class PsiloStack extends cdk.Stack {
     s3RestoreCompletedRule.addTarget(
       new targets.LambdaFunction(handleRestoreCompletedFn),
     );
+
+    const manageRetrievalFn = new NodejsFunction(this, "ManageRetrievalFn", {
+      entry: path.join(
+        __dirname,
+        "../../services/manage-retrieval/src/handler.ts",
+      ),
+      handler: "handler",
+      runtime: lambda.Runtime.NODEJS_22_X,
+      environment: { ...dbEnv },
+      timeout: cdk.Duration.seconds(29),
+      bundling: { esbuildVersion: "0.21" },
+    });
+    dbCluster.grantDataApiAccess(manageRetrievalFn);
+    dbSecret.grantRead(manageRetrievalFn);
 
     const httpApi = new apigatewayv2.HttpApi(this, "HttpApi", {
       corsPreflight: {
@@ -543,6 +558,26 @@ export class PsiloStack extends cdk.Stack {
         "RequestRestoreIntegration",
         requestRestoreFn,
       ),
+      authorizer: cognitoAuthorizer,
+    });
+
+    const manageRetrievalIntegration =
+      new apigatewayv2Integrations.HttpLambdaIntegration(
+        "ManageRetrievalIntegration",
+        manageRetrievalFn,
+      );
+
+    httpApi.addRoutes({
+      path: "/retrieval/batches",
+      methods: [apigatewayv2.HttpMethod.GET],
+      integration: manageRetrievalIntegration,
+      authorizer: cognitoAuthorizer,
+    });
+
+    httpApi.addRoutes({
+      path: "/retrieval/batches/{batchId}",
+      methods: [apigatewayv2.HttpMethod.GET],
+      integration: manageRetrievalIntegration,
       authorizer: cognitoAuthorizer,
     });
 
