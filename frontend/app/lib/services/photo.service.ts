@@ -55,6 +55,8 @@ export const photoService = {
     api.delete<{ message: string }>("/api/photos", { keys }),
   updatePhotoTakenAt: (key: string, takenAt: string | null) =>
     api.patch<Photo>(`/api/photos?key=${encodeURIComponent(key)}`, { takenAt }),
+  updatePhotosTakenAt: (keys: string[], takenAt: string | null) =>
+    api.patch<{ message: string }>("/api/photos", { keys, takenAt }),
   getStorageSize: (): Promise<StorageSize> =>
     api.get<StorageSize>("/api/photos/storage-size"),
 };

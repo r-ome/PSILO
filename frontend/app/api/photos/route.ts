@@ -42,12 +42,28 @@ export async function PATCH(req: NextRequest) {
   }
 
   const key = req.nextUrl.searchParams.get("key");
-  if (!key) {
-    return NextResponse.json({ message: "key is required" }, { status: 400 });
-  }
 
   try {
     const body = await req.json();
+
+    // Bulk update: body with keys array
+    if (!key) {
+      if (body && Array.isArray(body.keys)) {
+        const response = await fetch(`${env.BACKEND_API_URL}/photos`, {
+          method: "PATCH",
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ keys: body.keys, takenAt: body.takenAt }),
+        });
+        const data = await response.json();
+        return NextResponse.json(data, { status: response.status });
+      }
+      return NextResponse.json({ message: "key or keys are required" }, { status: 400 });
+    }
+
+    // Single update: key query parameter
     const response = await fetch(
       `${env.BACKEND_API_URL}/photos/${encodeURIComponent(key)}`,
       {

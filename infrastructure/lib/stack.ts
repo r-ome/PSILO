@@ -469,7 +469,7 @@ export class PsiloStack extends cdk.Stack {
 
     httpApi.addRoutes({
       path: "/photos",
-      methods: [apigatewayv2.HttpMethod.GET, apigatewayv2.HttpMethod.DELETE],
+      methods: [apigatewayv2.HttpMethod.GET, apigatewayv2.HttpMethod.DELETE, apigatewayv2.HttpMethod.PATCH],
       integration: managePhotosIntegration,
       authorizer: cognitoAuthorizer,
     });
@@ -503,7 +503,7 @@ export class PsiloStack extends cdk.Stack {
 
     httpApi.addRoutes({
       path: "/albums/{albumId}",
-      methods: [apigatewayv2.HttpMethod.GET, apigatewayv2.HttpMethod.DELETE],
+      methods: [apigatewayv2.HttpMethod.GET, apigatewayv2.HttpMethod.DELETE, apigatewayv2.HttpMethod.PUT],
       integration: manageAlbumsIntegration,
       authorizer: cognitoAuthorizer,
     });

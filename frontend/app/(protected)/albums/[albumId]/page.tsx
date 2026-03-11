@@ -12,7 +12,7 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/app/components/ui/dialog";
-import { Trash2, Plus, Check, CheckSquare, Square, Download, Loader2Icon } from "lucide-react";
+import { Trash2, Pencil, Plus, Check, CheckSquare, Square, Download, Loader2Icon, CalendarDays } from "lucide-react";
 import {
   albumService,
   AlbumWithPhotos,
@@ -20,8 +20,10 @@ import {
 import { photoService, Photo } from "@/app/lib/services/photo.service";
 import PhotoGrid from "@/app/(protected)/components/PhotoGrid";
 import DeleteConfirmDialog from "@/app/(protected)/components/DeleteConfirmDialog";
+import UpdateTakenAtDialog from "@/app/(protected)/components/UpdateTakenAtDialog";
 import DownloadModal from "@/app/(protected)/components/DownloadModal";
 import ImageViewer from "@/app/(protected)/components/ImageViewer";
+import EditAlbumDialog from "@/app/(protected)/albums/[albumId]/EditAlbumDialog";
 import { useLoadMore } from "@/app/lib/hooks/useLoadMore";
 
 export default function AlbumDetailPage({
@@ -47,6 +49,9 @@ export default function AlbumDetailPage({
   const [pickerNextCursor, setPickerNextCursor] = useState<string | null>(null);
   const [isLoadingMorePicker, setIsLoadingMorePicker] = useState(false);
   const [isAddingPhotos, setIsAddingPhotos] = useState(false);
+  const [albumToEdit, setAlbumToEdit] = useState<AlbumWithPhotos | null>(null);
+  const [photoToUpdate, setPhotoToUpdate] = useState<Photo | null>(null);
+  const [bulkUpdatePending, setBulkUpdatePending] = useState(false);
   const pickerScrollContainerRef = useRef<HTMLDivElement>(null);
   const prevShowPickerRef = useRef(false);
 
@@ -197,6 +202,53 @@ export default function AlbumDetailPage({
     if (selectMode) setSelectedIds(new Set());
   };
 
+  const handleUpdateConfirm = async (takenAt: string | null) => {
+    if (!photoToUpdate) return;
+    const key = photoToUpdate.s3Key;
+    setPhotoToUpdate(null);
+    try {
+      const updated = await photoService.updatePhotoTakenAt(key, takenAt);
+      setAlbum((prev) =>
+        prev
+          ? {
+              ...prev,
+              photos: prev.photos.map((p) =>
+                p.s3Key === updated.s3Key ? { ...p, takenAt: updated.takenAt } : p,
+              ),
+            }
+          : prev,
+      );
+    } catch {
+      // ignore
+    }
+  };
+
+  const handleBulkUpdateConfirm = async (takenAt: string | null) => {
+    if (!album) return;
+    const toUpdate = album.photos.filter((p) => selectedIds.has(p.id));
+    try {
+      await photoService.updatePhotosTakenAt(
+        toUpdate.map((p) => p.s3Key),
+        takenAt,
+      );
+      setAlbum((prev) =>
+        prev
+          ? {
+              ...prev,
+              photos: prev.photos.map((p) =>
+                toUpdate.some((u) => u.id === p.id) ? { ...p, takenAt } : p,
+              ),
+            }
+          : prev,
+      );
+    } catch {
+      // ignore
+    } finally {
+      setBulkUpdatePending(false);
+      setSelectedIds(new Set());
+    }
+  };
+
   const albumPhotoIds = new Set(album?.photos.map((p) => p.id) ?? []);
   const availablePhotos = allPhotos.filter(
     (p) => !albumPhotoIds.has(p.id) && p.status === "completed",
@@ -244,6 +296,13 @@ export default function AlbumDetailPage({
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <h1 className="text-2xl font-bold">{album.name}</h1>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setAlbumToEdit(album)}
+          >
+            <Pencil className="h-4 w-4" />
+          </Button>
           <Button
             variant="ghost"
             size="sm"
@@ -390,6 +449,14 @@ export default function AlbumDetailPage({
                 {selectedIds.size} selected
               </span>
               <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setBulkUpdatePending(true)}
+              >
+                <CalendarDays className="h-4 w-4 mr-1" />
+                Update date
+              </Button>
+              <Button
                 variant="destructive"
                 size="sm"
                 onClick={() => setBulkRemovePending(true)}
@@ -417,6 +484,16 @@ export default function AlbumDetailPage({
         </div>
       )}
 
+      <UpdateTakenAtDialog
+        photo={photoToUpdate}
+        onConfirm={handleUpdateConfirm}
+        onCancel={() => setPhotoToUpdate(null)}
+      />
+      <UpdateTakenAtDialog
+        bulkCount={bulkUpdatePending ? selectedIds.size : null}
+        onConfirm={handleBulkUpdateConfirm}
+        onCancel={() => setBulkUpdatePending(false)}
+      />
       <DeleteConfirmDialog
         photo={photoToRemove}
         onConfirm={handleRemoveConfirm}
@@ -447,6 +524,17 @@ export default function AlbumDetailPage({
         isOpen={albumDownloadOpen}
         onClose={() => setAlbumDownloadOpen(false)}
         photos={album.photos}
+      />
+      <EditAlbumDialog
+        album={albumToEdit}
+        onCancel={() => setAlbumToEdit(null)}
+        onConfirm={async (name) => {
+          await albumService.updateAlbum(albumId, name);
+          setAlbum((prev) =>
+            prev ? { ...prev, name } : prev,
+          );
+          setAlbumToEdit(null);
+        }}
       />
     </div>
   );

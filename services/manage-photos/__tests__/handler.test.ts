@@ -228,6 +228,35 @@ describe('manage-photos handler', () => {
 
       expect(result.statusCode).toBe(400);
     });
+
+    it('updates takenAt for multiple photos in bulk', async () => {
+      const keys = [
+        `users/John-Doe-${sub}/photos/photo1.jpg`,
+        `users/John-Doe-${sub}/photos/photo2.jpg`,
+      ];
+
+      const result = await callHandler(
+        makeEvent('PATCH', 'PATCH /photos', sub, undefined, { keys, takenAt: '2024-01-01T00:00:00.000Z' }),
+      );
+
+      expect(result.statusCode).toBe(200);
+      expect(JSON.parse(result.body as string)).toEqual({ message: 'Photos updated' });
+      expect(mockUpdate).toHaveBeenCalledWith('photos_table');
+    });
+
+    it('returns 403 when any key in bulk update does not belong to user', async () => {
+      const keys = [
+        `users/John-Doe-${sub}/photos/photo1.jpg`,
+        `users/John-Doe-000000000000000000000000000000000000/photos/photo2.jpg`,
+      ];
+
+      const result = await callHandler(
+        makeEvent('PATCH', 'PATCH /photos', sub, undefined, { keys, takenAt: '2024-01-01T00:00:00.000Z' }),
+      );
+
+      expect(result.statusCode).toBe(403);
+      expect(mockUpdate).not.toHaveBeenCalled();
+    });
   });
 
   describe('unsupported method', () => {

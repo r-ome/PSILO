@@ -233,6 +233,42 @@ export const handler = async (
   }
 
   if (method === "PATCH") {
+    // Bulk update: body with keys array
+    if (event.body) {
+      let body: unknown;
+      try {
+        body = JSON.parse(event.body);
+      } catch {
+        return respond(400, { message: "Invalid JSON body" });
+      }
+      if (
+        body &&
+        typeof body === "object" &&
+        "keys" in body &&
+        Array.isArray((body as { keys: unknown }).keys)
+      ) {
+        const keys = (body as { keys: string[] }).keys;
+        const takenAtStr = (body as { keys: string[]; takenAt?: string }).takenAt;
+        const takenAt = takenAtStr ? new Date(takenAtStr) : null;
+
+        // Ownership guard: all keys must belong to sub
+        for (const key of keys) {
+          const parts = key.split("/");
+          const userSegment = parts[1] ?? "";
+          const keyUserId = userSegment.slice(-36);
+          if (keyUserId !== sub) {
+            return respond(403, { message: "Forbidden" });
+          }
+        }
+
+        await db.update(photos).set({ takenAt })
+          .where(and(inArray(photos.s3Key, keys), eq(photos.userId, sub)));
+
+        return respond(200, { message: "Photos updated" });
+      }
+    }
+
+    // Single update: path parameter key
     const key = event.pathParameters?.key;
     if (!key) return respond(400, { message: "Missing photo key" });
 

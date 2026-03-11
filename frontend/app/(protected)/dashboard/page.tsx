@@ -41,21 +41,31 @@ export default function Page() {
   const [bulkUpdatePending, setBulkUpdatePending] = useState(false);
   const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
   const [selectMode, setSelectMode] = useState(false);
+  const [storageSize, setStorageSize] = useState<{
+    standardSize: number;
+    glacierSize: number;
+    standardPhotoCount: number;
+    standardVideoCount: number;
+    glacierPhotoCount: number;
+    glacierVideoCount: number;
+  } | null>(null);
 
   const totalSizeMB = useMemo(() => {
-    const bytes = photos.reduce((sum, p) => sum + (p.size ?? 0), 0);
+    if (!storageSize) return "0.00";
+    const bytes = storageSize.standardSize + storageSize.glacierSize;
     return (bytes / (1024 * 1024)).toFixed(2);
-  }, [photos]);
+  }, [storageSize]);
 
   const photosCount = useMemo(() => {
-    const photo = photos.filter(
-      (item) => item.contentType && item.contentType.includes("image"),
-    ).length;
-    const video = photos.filter(
-      (item) => item.contentType && item.contentType.includes("video"),
-    ).length;
-    return { photo, video };
-  }, [photos]);
+    if (!storageSize)
+      return { photo: 0, video: 0 };
+    return {
+      photo:
+        storageSize.standardPhotoCount + storageSize.glacierPhotoCount,
+      video:
+        storageSize.standardVideoCount + storageSize.glacierVideoCount,
+    };
+  }, [storageSize]);
 
   const loadPhotos = useCallback(() => {
     photoService
@@ -63,6 +73,15 @@ export default function Page() {
       .then((data) => {
         setPhotos(data.photos);
         setNextCursor(data.nextCursor);
+      })
+      .catch(() => {});
+  }, []);
+
+  const loadStorageSize = useCallback(() => {
+    photoService
+      .getStorageSize()
+      .then((data) => {
+        setStorageSize(data);
       })
       .catch(() => {});
   }, []);
@@ -95,7 +114,8 @@ export default function Page() {
       })
       .catch(() => {})
       .finally(() => setIsLoading(false));
-  }, []);
+    loadStorageSize();
+  }, [loadStorageSize]);
 
   useEffect(() => {
     const hasInProgress = photos.some(
@@ -124,8 +144,11 @@ export default function Page() {
 
   const handleUploadComplete = useCallback(() => {
     setUploadDialogOpen(false);
-    setTimeout(loadPhotos, 2000);
-  }, [loadPhotos]);
+    setTimeout(() => {
+      loadPhotos();
+      loadStorageSize();
+    }, 2000);
+  }, [loadPhotos, loadStorageSize]);
 
   const handleToggleSelect = (photo: Photo) => {
     setSelectedIds((prev) => {
@@ -148,20 +171,25 @@ export default function Page() {
         next.delete(photoToDelete.id);
         return next;
       });
+      loadStorageSize();
     } catch {
       // ignore
     }
   };
 
-  const handleRetry = async (photo: Photo) => {
-    try {
-      await photoService.deletePhoto(photo.s3Key);
-      setPhotos((prev) => prev.filter((p) => p.id !== photo.id));
-    } catch {
-      // ignore
-    }
-    setUploadDialogOpen(true);
-  };
+  const handleRetry = useCallback(
+    async (photo: Photo) => {
+      try {
+        await photoService.deletePhoto(photo.s3Key);
+        setPhotos((prev) => prev.filter((p) => p.id !== photo.id));
+        loadStorageSize();
+      } catch {
+        // ignore
+      }
+      setUploadDialogOpen(true);
+    },
+    [loadStorageSize],
+  );
 
   const handleUpdateConfirm = async (takenAt: string | null) => {
     if (!photoToUpdate) return;
@@ -181,11 +209,10 @@ export default function Page() {
 
   const handleBulkUpdateConfirm = async (takenAt: string | null) => {
     const toUpdate = photos.filter((p) => selectedIds.has(p.id));
-    setBulkUpdatePending(false);
-    setSelectedIds(new Set());
     try {
-      await Promise.all(
-        toUpdate.map((p) => photoService.updatePhotoTakenAt(p.s3Key, takenAt)),
+      await photoService.updatePhotosTakenAt(
+        toUpdate.map((p) => p.s3Key),
+        takenAt,
       );
       setPhotos((prev) =>
         prev.map((p) =>
@@ -194,6 +221,9 @@ export default function Page() {
       );
     } catch {
       // ignore
+    } finally {
+      setBulkUpdatePending(false);
+      setSelectedIds(new Set());
     }
   };
 
@@ -206,6 +236,7 @@ export default function Page() {
       setPhotos((prev) =>
         prev.filter((p) => !toDelete.some((d) => d.id === p.id)),
       );
+      loadStorageSize();
     } catch {
       // ignore
     }
