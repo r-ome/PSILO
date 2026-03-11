@@ -12,7 +12,7 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/app/components/ui/dialog";
-import { Trash2, Plus, Check, CheckSquare, Square, Download } from "lucide-react";
+import { Trash2, Plus, Check, CheckSquare, Square, Download, Loader2Icon } from "lucide-react";
 import {
   albumService,
   AlbumWithPhotos,
@@ -46,6 +46,7 @@ export default function AlbumDetailPage({
   const [selectMode, setSelectMode] = useState(false);
   const [pickerNextCursor, setPickerNextCursor] = useState<string | null>(null);
   const [isLoadingMorePicker, setIsLoadingMorePicker] = useState(false);
+  const [isAddingPhotos, setIsAddingPhotos] = useState(false);
   const pickerScrollContainerRef = useRef<HTMLDivElement>(null);
   const prevShowPickerRef = useRef(false);
 
@@ -164,6 +165,7 @@ export default function AlbumDetailPage({
 
   const handleAddPhotos = async () => {
     if (pickerSelectedIds.size === 0) return;
+    setIsAddingPhotos(true);
     try {
       await Promise.all(
         [...pickerSelectedIds].map((id) =>
@@ -174,6 +176,7 @@ export default function AlbumDetailPage({
     } catch {
       // ignore
     } finally {
+      setIsAddingPhotos(false);
       setShowPicker(false);
       setPickerSelectedIds(new Set());
     }
@@ -230,7 +233,11 @@ export default function AlbumDetailPage({
   }, [showPicker, loadMorePhotosForPicker, pickerSentinelRef]);
 
   if (!album)
-    return <p className="text-sm text-muted-foreground">Loading...</p>;
+    return (
+      <div className="flex justify-center items-center py-16">
+        <Loader2Icon className="h-8 w-8 animate-spin text-muted-foreground" />
+      </div>
+    );
 
   return (
     <div className="space-y-6">
@@ -345,8 +352,8 @@ export default function AlbumDetailPage({
               </div>
             )}
             {isLoadingMorePicker && (
-              <div className="flex justify-center text-sm text-muted-foreground py-2">
-                Loading...
+              <div className="flex justify-center py-2">
+                <Loader2Icon className="h-4 w-4 animate-spin text-muted-foreground" />
               </div>
             )}
           </div>
@@ -362,10 +369,10 @@ export default function AlbumDetailPage({
             </Button>
             <Button
               onClick={handleAddPhotos}
-              disabled={pickerSelectedIds.size === 0}
+              disabled={pickerSelectedIds.size === 0 || isAddingPhotos}
             >
-              Add{" "}
-              {pickerSelectedIds.size > 0 ? `(${pickerSelectedIds.size})` : ""}
+              {isAddingPhotos && <Loader2Icon className="h-4 w-4 mr-2 animate-spin" />}
+              Add {pickerSelectedIds.size > 0 ? `(${pickerSelectedIds.size})` : ""}
             </Button>
           </DialogFooter>
         </DialogContent>

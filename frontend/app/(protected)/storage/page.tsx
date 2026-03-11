@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { photoService, StorageSize } from "@/app/lib/services/photo.service";
+import { Loader2Icon } from "lucide-react";
 import {
   Card,
   CardContent,
@@ -49,11 +50,9 @@ export default function StoragePage() {
         <h1 className="text-3xl font-bold mb-8">Storage</h1>
 
         {loading ? (
-          <Card>
-            <CardContent className="pt-6">
-              <p className="text-gray-500">Loading storage information...</p>
-            </CardContent>
-          </Card>
+          <div className="flex justify-center items-center py-16">
+            <Loader2Icon className="h-8 w-8 animate-spin text-muted-foreground" />
+          </div>
         ) : error ? (
           <Card>
             <CardContent className="pt-6">

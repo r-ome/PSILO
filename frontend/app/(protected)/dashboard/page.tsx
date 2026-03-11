@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback, useMemo, useRef } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import {
   Dialog,
   DialogContent,
@@ -16,6 +16,7 @@ import {
   Upload,
   CheckSquare,
   Square,
+  Loader2Icon,
 } from "lucide-react";
 import FileDropZone from "@/app/(protected)/components/FileDropZone";
 import PhotoGrid from "@/app/(protected)/components/PhotoGrid";
@@ -29,6 +30,7 @@ import { useLoadMore } from "@/app/lib/hooks/useLoadMore";
 export default function Page() {
   const [photos, setPhotos] = useState<Photo[]>([]);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [photoToDelete, setPhotoToDelete] = useState<Photo | null>(null);
   const [viewerIndex, setViewerIndex] = useState<number | null>(null);
@@ -91,7 +93,8 @@ export default function Page() {
         setPhotos(data.photos);
         setNextCursor(data.nextCursor);
       })
-      .catch(() => {});
+      .catch(() => {})
+      .finally(() => setIsLoading(false));
   }, []);
 
   useEffect(() => {
@@ -213,6 +216,14 @@ export default function Page() {
     if (selectMode) setSelectedIds(new Set());
   };
 
+  if (isLoading) {
+    return (
+      <div className="flex justify-center items-center py-16">
+        <Loader2Icon className="h-8 w-8 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-8 pb-8">
       <div className="flex justify-between items-center">
@@ -312,8 +323,8 @@ export default function Page() {
           />
           <div ref={sentinelRef} className="h-4" />
           {isLoadingMore && (
-            <div className="flex justify-center mt-4 text-sm text-muted-foreground">
-              Loading...
+            <div className="flex justify-center mt-4">
+              <Loader2Icon className="h-4 w-4 animate-spin text-muted-foreground" />
             </div>
           )}
         </div>

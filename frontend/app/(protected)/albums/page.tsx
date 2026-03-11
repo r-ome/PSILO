@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
-import { Trash2 } from "lucide-react";
+import { Trash2, Loader2Icon } from "lucide-react";
 import { Card, CardContent } from "@/app/components/ui/card";
 import { Button } from "@/app/components/ui/button";
 import { Input } from "@/app/components/ui/input";
@@ -19,6 +19,7 @@ import { formatDate } from "@/app/lib/utils";
 
 export default function AlbumsPage() {
   const [albums, setAlbums] = useState<Album[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
   const [newAlbumName, setNewAlbumName] = useState("");
   const [creating, setCreating] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -28,7 +29,8 @@ export default function AlbumsPage() {
     albumService
       .listAlbums()
       .then(setAlbums)
-      .catch(() => {});
+      .catch(() => {})
+      .finally(() => setIsLoading(false));
   }, []);
 
   const handleCreate = async () => {
@@ -74,6 +76,7 @@ export default function AlbumsPage() {
               onClick={handleCreate}
               disabled={creating || !newAlbumName.trim()}
             >
+              {creating && <Loader2Icon className="h-4 w-4 mr-2 animate-spin" />}
               Create
             </Button>
           </div>
@@ -82,7 +85,11 @@ export default function AlbumsPage() {
 
       <div>
         <h2 className="text-lg font-semibold mb-4">Your Albums</h2>
-        {albums.length === 0 ? (
+        {isLoading ? (
+          <div className="flex justify-center items-center py-16">
+            <Loader2Icon className="h-8 w-8 animate-spin text-muted-foreground" />
+          </div>
+        ) : albums.length === 0 ? (
           <p className="text-sm text-muted-foreground">No albums yet.</p>
         ) : (
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">

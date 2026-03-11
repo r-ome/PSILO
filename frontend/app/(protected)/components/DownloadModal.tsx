@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { Loader2Icon } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -180,11 +181,8 @@ export default function DownloadModal({
           </Button>
           {!message && (
             <Button onClick={handleDownload} disabled={loading}>
-              {loading
-                ? "Processing..."
-                : hasGlacier
-                  ? "Request Restore"
-                  : "Download"}
+              {loading && <Loader2Icon className="h-4 w-4 mr-2 animate-spin" />}
+              {hasGlacier ? "Request Restore" : "Download"}
             </Button>
           )}
         </DialogFooter>
