@@ -32,3 +32,16 @@ jobs:
           cd services && npm ci
           cd ../infrastructure && npm ci
           npx cdk deploy psilo-dev-apse1-stack --require-approval never
+
+      - name: Build & push video batch image
+        run: |
+          ECR_URI=$(aws ecr describe-repositories \
+            --repository-names video-thumbnail-processor \
+            --region ${{ secrets.AWS_REGION }} \
+            --query 'repositories[0].repositoryUri' \
+            --output text)
+          aws ecr get-login-password --region ${{ secrets.AWS_REGION }} \
+            | docker login --username AWS --password-stdin $ECR_URI
+          cd services/batch/video-thumbnail-processor
+          docker build -t $ECR_URI:latest .
+          docker push $ECR_URI:latest
