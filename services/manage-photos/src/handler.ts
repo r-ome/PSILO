@@ -9,7 +9,7 @@ import {
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { eq, desc, sql, and, or, lt, inArray, isNull, isNotNull } from "drizzle-orm";
 import { createDb } from "../../shared/db";
-import { photos } from "../../shared/schema";
+import { photos, retrievalBatches } from "../../shared/schema";
 
 const s3 = new S3Client({});
 const BUCKET_NAME = process.env.BUCKET_NAME!;
@@ -69,6 +69,20 @@ export const handler = async (
           glacierVideoCount = Number(row.videoCount);
         }
       }
+      const retrievalResult = await db
+        .select({
+          retrievalTier: retrievalBatches.retrievalTier,
+          totalSize: sql<number>`COALESCE(SUM(${retrievalBatches.totalSize}), 0)`,
+        })
+        .from(retrievalBatches)
+        .where(eq(retrievalBatches.userId, sub))
+        .groupBy(retrievalBatches.retrievalTier);
+
+      const retrievalSizeByTier: Record<string, number> = {};
+      for (const row of retrievalResult) {
+        retrievalSizeByTier[row.retrievalTier] = Number(row.totalSize);
+      }
+
       return respond(200, {
         standardSize,
         glacierSize,
@@ -79,6 +93,7 @@ export const handler = async (
         standardVideoCount,
         glacierPhotoCount,
         glacierVideoCount,
+        retrievalSizeByTier,
       });
     }
 

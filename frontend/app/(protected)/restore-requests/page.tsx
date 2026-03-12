@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import { Loader2Icon } from "lucide-react";
 import {
@@ -16,7 +17,7 @@ import {
 import { formatDate } from "@/app/lib/utils";
 import { differenceInDays, differenceInHours } from "date-fns";
 
-const date_format = "MMM d, yyyy h:m aaa";
+const date_format = "MMM d, yyyy h:mm aaa";
 
 function formatBytes(bytes: number): string {
   if (bytes === 0) return "0 B";
@@ -142,13 +143,13 @@ function BatchDetail({ batchId }: { batchId: string }) {
             </td>
             <td className="py-1.5">
               {req.retrievalLink && (
-                <a
+                <Link
                   href={req.retrievalLink}
                   download
                   className="text-xs font-medium text-primary hover:underline"
                 >
                   Download
-                </a>
+                </Link>
               )}
             </td>
           </tr>
@@ -185,10 +186,10 @@ export default function RestoreRequestsPage() {
           No restore requests yet.
         </p>
       ) : (
-        <Accordion type="single" collapsible className="w-full">
+        <Accordion type="single" collapsible className="w-full px-30">
           {batches.map((batch) => (
             <AccordionItem key={batch.id} value={batch.id}>
-              <AccordionTrigger className="hover:no-underline cursor-pointer hover:bg-gray-100">
+              <AccordionTrigger className="hover:no-underline cursor-pointer hover:bg-gray-100 px-4">
                 <div className="flex items-center gap-4 text-sm w-full mr-2">
                   <span className="font-medium capitalize">
                     {batch.batchType.toLowerCase()}
@@ -209,7 +210,7 @@ export default function RestoreRequestsPage() {
                   </span>
                 </div>
               </AccordionTrigger>
-              <AccordionContent>
+              <AccordionContent className="px-10">
                 <BatchDetail batchId={batch.id} />
               </AccordionContent>
             </AccordionItem>

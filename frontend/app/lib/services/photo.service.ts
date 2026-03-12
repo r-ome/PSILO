@@ -39,6 +39,7 @@ export interface StorageSize {
   standardVideoCount: number; // videos in standard
   glacierPhotoCount: number; // photos in glacier
   glacierVideoCount: number; // videos in glacier
+  retrievalSizeByTier: Record<string, number>; // bytes per retrieval tier
 }
 
 export const photoService = {
