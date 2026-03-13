@@ -32,24 +32,32 @@ and full-stack TypeScript. Integrated with Claude Code for AI-assisted developme
     - API Gateway + Lambda - request handling and business logic
     - S3 - object storage with lifecycle rules (originals transition to Glacier)
     - SQS + DLQ - for async metadata processing and thumbnail generation
-    - EventBridge - listens for S3 storage class transitions
-    - Aurora Serverless v2 - stores users, photo metadata, storage class state
+    - EventBridge - listens for S3 storage class transitions and Glacier restore completions
+    - Aurora Serverless v2 - stores users, photo metadata, storage class state, retrieval batches
+    - AWS Batch (Fargate Spot) + ECR - video thumbnail and preview generation via FFmpeg
+    - SES - email notifications when Glacier restores complete
 
 # Project Structure
 
 ```
-├── frontend/                      # Next.js app
-├── infrastructure/                # AWS CDK stacks
-└── services/                      # Lambda functions
-      ├── generate-presigned-url/  # Returns S3 presigned PUT URLs
-      ├── manage-photos/           # List, delete, storage stats
-      ├── manage-albums/           # CRUD albums
-      ├── user-provisioning/       # Post-Cognito confirmation setup
-      ├── process-photo-metadata/  # Thumbnail generation + EXIF extraction (SQS)
-      ├── lifecycle-transition/    # Tracks S3 Glacier transitions (EventBridge)
-      ├── handle-upload-dlq/       # Dead-letter queue handler
-      ├── shared/                  # Schema + DB client (bundled by esbuild)
-      └── migrations/              # Drizzle SQL migrations
+├── frontend/                        # Next.js app
+├── infrastructure/                  # AWS CDK stacks
+│     └── lib/constructs/            # CDK constructs (storage, database, auth, upload-pipeline, api, video-pipeline)
+└── services/                        # Lambda functions
+      ├── generate-presigned-url/    # Returns S3 presigned PUT URLs
+      ├── manage-photos/             # List, delete, storage stats, trash
+      ├── manage-albums/             # CRUD albums + album-photo associations
+      ├── manage-retrieval/          # List retrieval batches and per-file restore status
+      ├── request-restore/           # POST /files/restore — presigned URL or Glacier restore
+      ├── handle-restore-completed/  # EventBridge — sends SES email when Glacier restore finishes
+      ├── user-provisioning/         # Post-Cognito confirmation setup
+      ├── process-photo-metadata/    # EXIF extraction + thumbnail gen; submits Batch jobs for videos (SQS)
+      ├── lifecycle-transition/      # Tracks S3 Glacier transitions (EventBridge)
+      ├── handle-upload-dlq/         # Dead-letter queue handler
+      ├── batch/
+      │     └── video-thumbnail-processor/  # Fargate job: FFmpeg thumbnail + 5s preview generation
+      ├── shared/                    # Schema + DB client (bundled by esbuild)
+      └── migrations/                # Drizzle SQL migrations
 ```
 
 ### Frontend
@@ -66,15 +74,18 @@ Lambda functions written in Typescript, each handling a specific domain (photos,
 
 # Tech Stack
 
-| Layer          | Technology                      |
-| -------------- | ------------------------------- |
-| Frontend       | Next.js, TypeScript             |
-| Backend        | AWS Lambda, Node.js v22+        |
-| Database       | Aurora Serverless (Drizzle ORM) |
-| Infrastructure | AWS CDK                         |
-| Storage        | S3 Glacier Flexible Retrieval   |
-| Auth           | Cognito                         |
-| Queue          | SQS                             |
+| Layer          | Technology                            |
+| -------------- | ------------------------------------- |
+| Frontend       | Next.js, TypeScript                   |
+| Backend        | AWS Lambda, Node.js v22+              |
+| Database       | Aurora Serverless v2 (Drizzle ORM)    |
+| Infrastructure | AWS CDK (construct-per-domain)        |
+| Storage        | S3 Glacier Flexible Retrieval         |
+| Auth           | Cognito                               |
+| Queue          | SQS + DLQ                             |
+| Video          | AWS Batch (Fargate Spot) + FFmpeg     |
+| Email          | SES                                   |
+| Registry       | ECR                                   |
 
 # AWS Architecture
 
@@ -84,34 +95,51 @@ User["User (Browser)"]
 FE["Frontend<br>Next.js"]
 APIGW["API Gateway"]
 Cognito["Cognito<br>Auth"]
-APILambda["API Lambdas<br>(manage-photos, manage-albums)"]
+APILambda["API Lambdas<br>(manage-photos, manage-albums,<br>manage-retrieval)"]
 PresignLambda["generate-presigned-url"]
+RestoreLambda["request-restore"]
+HandleRestoreLambda["handle-restore-completed"]
 ProcessLambda["process-photo-metadata"]
 LifecycleLambda["lifecycle-transition"]
 DLQLambda["handle-upload-dlq"]
 SQS["SQS Upload Queue"]
 DLQ["Dead-Letter Queue"]
 S3["S3<br>(Standard + Glacier)"]
-Aurora["Aurora Serverless<br>Metadata"]
+Aurora["Aurora Serverless<br>Metadata + Retrieval Batches"]
 EventBridge["EventBridge<br>S3 Events"]
+Batch["AWS Batch<br>(Fargate Spot + FFmpeg)"]
+ECR["ECR<br>Video Processor Image"]
+SES["SES<br>Email"]
 
 User --> FE
 FE --> Cognito
 FE --> APIGW
 APIGW --> APILambda
 APIGW --> PresignLambda
+APIGW --> RestoreLambda
 PresignLambda --> S3
 APILambda --> S3
 APILambda --> Aurora
+RestoreLambda --> S3
+RestoreLambda --> Aurora
 S3 -->|ObjectCreated| SQS
 SQS --> ProcessLambda
 ProcessLambda --> S3
 ProcessLambda --> Aurora
+ProcessLambda -->|videos| Batch
+ECR --> Batch
+Batch --> S3
+Batch --> Aurora
 SQS -->|after 3 retries| DLQ
 DLQ --> DLQLambda
 S3 -->|StorageClassChanged| EventBridge
+S3 -->|RestoreCompleted| EventBridge
 EventBridge --> LifecycleLambda
+EventBridge --> HandleRestoreLambda
 LifecycleLambda --> Aurora
+HandleRestoreLambda --> Aurora
+HandleRestoreLambda --> SES
+SES --> User
 ```
 
 # Status
@@ -122,15 +150,19 @@ LifecycleLambda --> Aurora
 - [x] Authentication (Cognito)
 - [x] File Upload
 - [x] File Retrieval
-- [x] Album Management
+- [x] Album Management (CRUD, rename)
 - [x] Thumbnail generation (800×800 JPEG, served from Standard)
 - [x] S3 Glacier lifecycle for originals (cost optimization)
-- [x] Storage usage dashboard with per-class cost breakdown
+- [x] Storage usage dashboard with per-class cost breakdown + retrieval cost estimates
 - [x] Infinite scroll on dashboard
 - [x] Bulk photo delete
-- [x] Video support (upload + grid playback)
+- [x] Trash bin + photo restore
+- [x] Video support (upload + thumbnail cover + hover preview via AWS Batch + FFmpeg)
+- [x] Full-resolution photo download (Standard: immediate presigned URL; Glacier: restore + SES email)
+- [x] Glacier restore tier selection (Expedited / Standard / Bulk)
+- [x] Retrieval batch tracking + restore requests page
+- [x] CDK stack refactored into per-domain constructs
 - [ ] Photo sorting and filtering
-- [ ] Full-resolution photo retrieval (Glacier restore flow)
 
 # Key Decisions
 
