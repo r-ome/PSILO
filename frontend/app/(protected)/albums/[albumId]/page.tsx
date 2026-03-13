@@ -15,6 +15,7 @@ import {
 import { Trash2, Pencil, Plus, Check, CheckSquare, Square, Download, Loader2Icon, CalendarDays, ArchiveRestore } from "lucide-react";
 import {
   albumService,
+  Album,
   AlbumWithPhotos,
 } from "@/app/lib/services/album.service";
 import { photoService, Photo } from "@/app/lib/services/photo.service";
@@ -35,8 +36,10 @@ export default function AlbumDetailPage({
 }) {
   const router = useRouter();
   const { albumId } = use(params);
-  const [album, setAlbum] = useState<AlbumWithPhotos | null>(null);
-  const [allPhotos, setAllPhotos] = useState<Photo[]>([]);
+  const [album, setAlbum] = useState<Album | null>(null);
+  const [albumPhotos, setAlbumPhotos] = useState<Photo[]>([]);
+  const [albumNextCursor, setAlbumNextCursor] = useState<string | null>(null);
+  const [isLoadingMoreAlbum, setIsLoadingMoreAlbum] = useState(false);
   const [showPicker, setShowPicker] = useState(false);
   const [pickerSelectedIds, setPickerSelectedIds] = useState<Set<string>>(
     new Set(),
@@ -51,7 +54,7 @@ export default function AlbumDetailPage({
   const [pickerNextCursor, setPickerNextCursor] = useState<string | null>(null);
   const [isLoadingMorePicker, setIsLoadingMorePicker] = useState(false);
   const [isAddingPhotos, setIsAddingPhotos] = useState(false);
-  const [albumToEdit, setAlbumToEdit] = useState<AlbumWithPhotos | null>(null);
+  const [albumToEdit, setAlbumToEdit] = useState<Album | null>(null);
   const [photoToUpdate, setPhotoToUpdate] = useState<Photo | null>(null);
   const [restoreAlbumOpen, setRestoreAlbumOpen] = useState(false);
   const [restoreAlbumTier, setRestoreAlbumTier] = useState<GlacierTier>("Standard");
@@ -64,6 +67,8 @@ export default function AlbumDetailPage({
     try {
       const data = await albumService.getAlbum(albumId);
       setAlbum(data);
+      setAlbumPhotos(data.photos);
+      setAlbumNextCursor(data.nextCursor);
     } catch {
       // ignore
     }
@@ -72,7 +77,11 @@ export default function AlbumDetailPage({
   useEffect(() => {
     albumService
       .getAlbum(albumId)
-      .then(setAlbum)
+      .then((data) => {
+        setAlbum(data);
+        setAlbumPhotos(data.photos);
+        setAlbumNextCursor(data.nextCursor);
+      })
       .catch(() => {});
     photoService
       .listPhotos()
@@ -82,6 +91,21 @@ export default function AlbumDetailPage({
       })
       .catch(() => {});
   }, [albumId]);
+
+  const [allPhotos, setAllPhotos] = useState<Photo[]>([]);
+
+  const loadMoreAlbumPhotos = useCallback(() => {
+    if (!albumNextCursor || isLoadingMoreAlbum) return;
+    setIsLoadingMoreAlbum(true);
+    albumService
+      .getAlbum(albumId, albumNextCursor)
+      .then((data) => {
+        setAlbumPhotos((prev) => [...prev, ...data.photos]);
+        setAlbumNextCursor(data.nextCursor);
+      })
+      .catch(() => {})
+      .finally(() => setIsLoadingMoreAlbum(false));
+  }, [albumId, albumNextCursor, isLoadingMoreAlbum]);
 
   const loadMorePhotosForPicker = useCallback(() => {
     if (!pickerNextCursor) return;
@@ -96,19 +120,24 @@ export default function AlbumDetailPage({
       .finally(() => setIsLoadingMorePicker(false));
   }, [pickerNextCursor]);
 
+  // Poll for status updates on pending/processing photos in current view
   useEffect(() => {
-    const albumHasInProgress = album?.photos.some(
+    const hasInProgress = albumPhotos.some(
       (p) => p.status === "pending" || p.status === "processing",
     );
-    if (!albumHasInProgress) return;
+    if (!hasInProgress) return;
     const id = setInterval(() => {
       albumService
         .getAlbum(albumId)
-        .then(setAlbum)
+        .then((freshData) => {
+          setAlbum(freshData);
+          const updatedMap = new Map(freshData.photos.map((p) => [p.id, p]));
+          setAlbumPhotos((prev) => prev.map((p) => updatedMap.get(p.id) ?? p));
+        })
         .catch(() => {});
     }, 3000);
     return () => clearInterval(id);
-  }, [album, albumId]);
+  }, [albumPhotos, albumId]);
 
   const handleToggleSelect = (photo: Photo) => {
     setSelectedIds((prev) => {
@@ -125,11 +154,7 @@ export default function AlbumDetailPage({
     setPhotoToRemove(null);
     try {
       await albumService.removePhotoFromAlbum(albumId, id);
-      setAlbum((prev) =>
-        prev
-          ? { ...prev, photos: prev.photos.filter((p) => p.id !== id) }
-          : prev,
-      );
+      setAlbumPhotos((prev) => prev.filter((p) => p.id !== id));
       setSelectedIds((prev) => {
         const next = new Set(prev);
         next.delete(id);
@@ -141,23 +166,15 @@ export default function AlbumDetailPage({
   };
 
   const handleBulkRemoveConfirm = async () => {
-    if (!album) return;
-    const toRemove = album.photos.filter((p) => selectedIds.has(p.id));
+    const toRemove = albumPhotos.filter((p) => selectedIds.has(p.id));
     setBulkRemovePending(false);
     setSelectedIds(new Set());
     try {
       await Promise.all(
         toRemove.map((p) => albumService.removePhotoFromAlbum(albumId, p.id)),
       );
-      setAlbum((prev) =>
-        prev
-          ? {
-              ...prev,
-              photos: prev.photos.filter(
-                (p) => !toRemove.some((r) => r.id === p.id),
-              ),
-            }
-          : prev,
+      setAlbumPhotos((prev) =>
+        prev.filter((p) => !toRemove.some((r) => r.id === p.id)),
       );
     } catch {
       // ignore
@@ -213,15 +230,10 @@ export default function AlbumDetailPage({
     setPhotoToUpdate(null);
     try {
       const updated = await photoService.updatePhotoTakenAt(key, takenAt);
-      setAlbum((prev) =>
-        prev
-          ? {
-              ...prev,
-              photos: prev.photos.map((p) =>
-                p.s3Key === updated.s3Key ? { ...p, takenAt: updated.takenAt } : p,
-              ),
-            }
-          : prev,
+      setAlbumPhotos((prev) =>
+        prev.map((p) =>
+          p.s3Key === updated.s3Key ? { ...p, takenAt: updated.takenAt } : p,
+        ),
       );
     } catch {
       // ignore
@@ -229,22 +241,16 @@ export default function AlbumDetailPage({
   };
 
   const handleBulkUpdateConfirm = async (takenAt: string | null) => {
-    if (!album) return;
-    const toUpdate = album.photos.filter((p) => selectedIds.has(p.id));
+    const toUpdate = albumPhotos.filter((p) => selectedIds.has(p.id));
     try {
       await photoService.updatePhotosTakenAt(
         toUpdate.map((p) => p.s3Key),
         takenAt,
       );
-      setAlbum((prev) =>
-        prev
-          ? {
-              ...prev,
-              photos: prev.photos.map((p) =>
-                toUpdate.some((u) => u.id === p.id) ? { ...p, takenAt } : p,
-              ),
-            }
-          : prev,
+      setAlbumPhotos((prev) =>
+        prev.map((p) =>
+          toUpdate.some((u) => u.id === p.id) ? { ...p, takenAt } : p,
+        ),
       );
     } catch {
       // ignore
@@ -256,7 +262,7 @@ export default function AlbumDetailPage({
 
   const handleRestoreAlbum = async () => {
     if (!album) return;
-    const glacierPhotos = album.photos.filter((p) => p.storageClass === "GLACIER");
+    const glacierPhotos = albumPhotos.filter((p) => p.storageClass === "GLACIER");
     if (glacierPhotos.length === 0) return;
     setRestoreAlbumLoading(true);
     try {
@@ -277,7 +283,7 @@ export default function AlbumDetailPage({
     }
   };
 
-  const albumPhotoIds = new Set(album?.photos.map((p) => p.id) ?? []);
+  const albumPhotoIds = new Set(albumPhotos.map((p) => p.id));
   const availablePhotos = allPhotos.filter(
     (p) => !albumPhotoIds.has(p.id) && p.status === "completed",
   );
@@ -288,6 +294,12 @@ export default function AlbumDetailPage({
     onLoadMore: loadMorePhotosForPicker,
     scrollContainerRef: pickerScrollContainerRef,
     isOpen: showPicker,
+  });
+
+  const albumSentinelRef = useLoadMore({
+    nextCursor: albumNextCursor,
+    isLoadingMore: isLoadingMoreAlbum,
+    onLoadMore: loadMoreAlbumPhotos,
   });
 
   // When the dialog opens, explicitly check if the sentinel is already visible
@@ -340,7 +352,7 @@ export default function AlbumDetailPage({
           </Button>
         </div>
         <div className="flex items-center gap-2">
-          {album.photos.length > 0 && (
+          {albumPhotos.length > 0 && (
             <Button
               variant="outline"
               size="sm"
@@ -350,7 +362,7 @@ export default function AlbumDetailPage({
               Download Album
             </Button>
           )}
-          {album.photos.some((p) => p.storageClass === "GLACIER") && (
+          {albumPhotos.some((p) => p.storageClass === "GLACIER") && (
             <Button
               variant="outline"
               size="sm"
@@ -371,7 +383,7 @@ export default function AlbumDetailPage({
             <Plus className="h-4 w-4 mr-1" />
             Add Photos
           </Button>
-          {album.photos.length > 0 && (
+          {albumPhotos.length > 0 && (
             <Button
               variant={selectMode ? "default" : "outline"}
               size="sm"
@@ -428,7 +440,7 @@ export default function AlbumDetailPage({
                         <Image
                           src={
                             photo.contentType?.startsWith("video/")
-                              ? photo.signedUrl || ""
+                              ? photo.thumbnailUrl || photo.signedUrl || ""
                               : photo.thumbnailUrl || ""
                           }
                           alt={photo.filename}
@@ -475,7 +487,7 @@ export default function AlbumDetailPage({
         </DialogContent>
       </Dialog>
 
-      {album.photos.length === 0 ? (
+      {albumPhotos.length === 0 ? (
         <p className="text-sm text-muted-foreground">
           No photos in this album.
         </p>
@@ -512,13 +524,19 @@ export default function AlbumDetailPage({
             </div>
           )}
           <PhotoGrid
-            photos={album.photos}
+            photos={albumPhotos}
             selectedIds={selectedIds}
             onToggleSelect={handleToggleSelect}
             onDeleteRequest={setPhotoToRemove}
             onPhotoClick={setViewerIndex}
             selectMode={selectMode}
           />
+          <div ref={albumSentinelRef} className="h-4" />
+          {isLoadingMoreAlbum && (
+            <div className="flex justify-center py-4">
+              <Loader2Icon className="h-6 w-6 animate-spin text-muted-foreground" />
+            </div>
+          )}
         </div>
       )}
 
@@ -553,15 +571,15 @@ export default function AlbumDetailPage({
         onCancel={() => setAlbumDeletePending(false)}
       />
       <ImageViewer
-        photos={album.photos}
+        photos={albumPhotos}
         initialIndex={viewerIndex}
         onClose={() => setViewerIndex(null)}
-        currentAlbum={album}
+        currentAlbum={album as AlbumWithPhotos}
       />
       <DownloadModal
         isOpen={albumDownloadOpen}
         onClose={() => setAlbumDownloadOpen(false)}
-        photos={album.photos}
+        photos={albumPhotos}
       />
       <Dialog open={restoreAlbumOpen} onOpenChange={setRestoreAlbumOpen}>
         <DialogContent className="max-w-md">
@@ -570,8 +588,8 @@ export default function AlbumDetailPage({
           </DialogHeader>
           <div className="space-y-4 py-2">
             <p className="text-sm text-muted-foreground">
-              {album.photos.filter((p) => p.storageClass === "GLACIER").length} photo
-              {album.photos.filter((p) => p.storageClass === "GLACIER").length !== 1 ? "s are" : " is"} archived in Glacier. Select a restore tier:
+              {albumPhotos.filter((p) => p.storageClass === "GLACIER").length} photo
+              {albumPhotos.filter((p) => p.storageClass === "GLACIER").length !== 1 ? "s are" : " is"} archived in Glacier. Select a restore tier:
             </p>
             <div className="space-y-2">
               {(

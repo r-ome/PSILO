@@ -1,7 +1,7 @@
 import { APIGatewayProxyEventV2WithJWTAuthorizer, APIGatewayProxyResultV2 } from 'aws-lambda';
 import { S3Client, GetObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
-import { eq, and, inArray, desc, isNotNull, isNull } from 'drizzle-orm';
+import { eq, and, inArray, desc, isNotNull, isNull, or, lt, sql } from 'drizzle-orm';
 import { createDb } from '../../shared/db';
 import { albums, albumPhotos, photos } from '../../shared/schema';
 
@@ -94,14 +94,58 @@ export const handler = async (
     );
     if (!album) return respond(404, { message: 'Album not found' });
 
-    const albumPhotosList = await db
+    const cursor = event.queryStringParameters?.cursor;
+    const limit = Math.min(parseInt(event.queryStringParameters?.limit ?? '30'), 100) || 30;
+
+    let photosQuery = db
       .select({ photo: photos })
       .from(albumPhotos)
       .innerJoin(photos, eq(albumPhotos.photoId, photos.id))
       .where(and(eq(albumPhotos.albumId, albumId), isNull(photos.deletedAt)));
 
+    if (cursor) {
+      try {
+        const decoded = JSON.parse(Buffer.from(cursor, 'base64').toString('utf-8'));
+        const { sortDate, id: cursorId } = decoded;
+        photosQuery = db
+          .select({ photo: photos })
+          .from(albumPhotos)
+          .innerJoin(photos, eq(albumPhotos.photoId, photos.id))
+          .where(
+            and(
+              eq(albumPhotos.albumId, albumId),
+              isNull(photos.deletedAt),
+              or(
+                lt(sql`COALESCE(${photos.takenAt}, ${photos.createdAt})`, sql`${sortDate}::timestamp`),
+                and(
+                  eq(sql`COALESCE(${photos.takenAt}, ${photos.createdAt})`, sql`${sortDate}::timestamp`),
+                  lt(photos.id, cursorId),
+                ),
+              ),
+            ),
+          );
+      } catch {
+        return respond(400, { message: 'Invalid cursor' });
+      }
+    }
+
+    const rawPhotos = await photosQuery
+      .orderBy(desc(sql`COALESCE(${photos.takenAt}, ${photos.createdAt})`), desc(photos.id))
+      .limit(limit + 1);
+
+    const hasMore = rawPhotos.length > limit;
+    const resultPhotos = hasMore ? rawPhotos.slice(0, limit) : rawPhotos;
+
+    const lastPhoto = resultPhotos[resultPhotos.length - 1]?.photo;
+    const sortDate = lastPhoto?.takenAt || lastPhoto?.createdAt;
+    const sortDateStr = typeof sortDate === 'string' ? sortDate : sortDate?.toISOString();
+    const nextCursor =
+      hasMore && lastPhoto && sortDateStr
+        ? Buffer.from(JSON.stringify({ sortDate: sortDateStr, id: lastPhoto.id })).toString('base64')
+        : null;
+
     const photosWithUrls = await Promise.all(
-      albumPhotosList.map(async ({ photo }) => {
+      resultPhotos.map(async ({ photo }) => {
         if (photo.contentType?.startsWith("video/")) {
           const [signedUrl, thumbnailUrl, previewUrl] = await Promise.all([
             getSignedUrl(s3, new GetObjectCommand({ Bucket: BUCKET_NAME, Key: photo.s3Key }), { expiresIn: 3600 }),
@@ -129,7 +173,7 @@ export const handler = async (
       }),
     );
 
-    return respond(200, { ...album, photos: photosWithUrls });
+    return respond(200, { ...album, photos: photosWithUrls, nextCursor });
   }
 
   // POST /albums/{albumId}/photos

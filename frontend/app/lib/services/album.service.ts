@@ -11,6 +11,7 @@ export interface Album {
 
 export interface AlbumWithPhotos extends Album {
   photos: Photo[];
+  nextCursor: string | null;
 }
 
 export const albumService = {
@@ -18,8 +19,10 @@ export const albumService = {
     api.post<Album>("/api/albums", { name }),
   listAlbums: () =>
     api.get<Album[]>("/api/albums"),
-  getAlbum: (albumId: string) =>
-    api.get<AlbumWithPhotos>(`/api/albums/${albumId}`),
+  getAlbum: (albumId: string, cursor?: string) => {
+    const params = cursor ? `?cursor=${encodeURIComponent(cursor)}` : '';
+    return api.get<AlbumWithPhotos>(`/api/albums/${albumId}${params}`);
+  },
   updateAlbum: (albumId: string, name: string) =>
     api.put<Album>(`/api/albums/${albumId}`, { name }),
   addPhotoToAlbum: (albumId: string, photoId: string) =>

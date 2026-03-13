@@ -16,7 +16,13 @@ export async function GET(
   }
 
   try {
-    const response = await fetch(`${env.BACKEND_API_URL}/albums/${albumId}`, {
+    const backendUrl = new URL(`${env.BACKEND_API_URL}/albums/${albumId}`);
+    const cursor = _req.nextUrl.searchParams.get('cursor');
+    const limit = _req.nextUrl.searchParams.get('limit');
+    if (cursor) backendUrl.searchParams.set('cursor', cursor);
+    if (limit) backendUrl.searchParams.set('limit', limit);
+
+    const response = await fetch(backendUrl.toString(), {
       headers: { Authorization: `Bearer ${accessToken}` },
     });
 
