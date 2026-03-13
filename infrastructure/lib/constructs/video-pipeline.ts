@@ -87,7 +87,7 @@ export class VideoPipelineConstruct extends Construct {
       type: "container",
       platformCapabilities: ["FARGATE"],
       containerProperties: {
-        image: `${this.ecrRepo.repositoryUri}:latest`,
+        image: `${this.ecrRepo.repositoryUri}:${this.node.tryGetContext("imageTag") ?? "latest"}`,
         resourceRequirements: [
           { type: "VCPU", value: "2" },
           { type: "MEMORY", value: "4096" },
