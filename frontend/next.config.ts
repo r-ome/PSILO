@@ -7,10 +7,8 @@ const nextConfig: NextConfig = {
   },
   images: {
     remotePatterns: [
-      {
-        protocol: "https",
-        hostname: "*.s3.ap-southeast-1.amazonaws.com",
-      },
+      { protocol: "https", hostname: "*.cloudfront.net" },
+      { protocol: "https", hostname: "*.s3.ap-southeast-1.amazonaws.com" },
     ],
   },
 };

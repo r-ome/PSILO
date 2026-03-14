@@ -146,7 +146,8 @@ export const handler = async (event: SQSEvent): Promise<SQSBatchResponse> => {
 
       if (contentType?.startsWith("video/")) {
         // For videos: tag original, update basic metadata, then submit Batch job for thumbnail/preview
-        takenAt = extractTakenAtFromFilename(filename) ?? head.LastModified ?? null;
+        takenAt =
+          extractTakenAtFromFilename(filename) ?? head.LastModified ?? null;
 
         await s3.send(
           new PutObjectTaggingCommand({
@@ -210,7 +211,10 @@ export const handler = async (event: SQSEvent): Promise<SQSBatchResponse> => {
       thumbnailKey = thumbnailPath;
 
       takenAt =
-        takenAt ?? extractTakenAtFromFilename(filename) ?? head.LastModified ?? null;
+        takenAt ??
+        extractTakenAtFromFilename(filename) ??
+        head.LastModified ??
+        null;
 
       // Tag original with media-type=original
       await s3.send(

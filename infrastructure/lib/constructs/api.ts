@@ -11,6 +11,7 @@ import { Construct } from "constructs";
 import * as path from "path";
 import { DatabaseConstruct } from "./database";
 import { AuthConstruct } from "./auth";
+import { CdnConstruct } from "./cdn";
 
 const { GET, POST, DELETE, PUT, PATCH } = apigatewayv2.HttpMethod;
 const { GET: CORS_GET, POST: CORS_POST, DELETE: CORS_DELETE, PATCH: CORS_PATCH } = apigatewayv2.CorsHttpMethod;
@@ -19,6 +20,7 @@ interface ApiProps {
   bucket: s3.Bucket;
   database: DatabaseConstruct;
   auth: AuthConstruct;
+  cdn: CdnConstruct;
 }
 
 export class ApiConstruct extends Construct {
@@ -27,7 +29,7 @@ export class ApiConstruct extends Construct {
   constructor(scope: Construct, id: string, props: ApiProps) {
     super(scope, id);
 
-    const { bucket, database, auth } = props;
+    const { bucket, database, auth, cdn } = props;
 
     // -------------------------------------------------------------------------
     // Background Lambdas (event-driven, no API routes)
@@ -103,22 +105,31 @@ export class ApiConstruct extends Construct {
     });
     bucket.grantPut(generatePresignedUrlFn);
 
+    const cfEnv = {
+      CLOUDFRONT_DOMAIN: cdn.cloudfrontDomain,
+      CLOUDFRONT_KEY_PAIR_ID: cdn.keyPairId,
+      CLOUDFRONT_PRIVATE_KEY_SECRET_ARN: cdn.privateKeySecret.secretArn,
+      USE_CLOUDFRONT: "true",
+    };
+
     const managePhotosFn = this.createFn("ManagePhotosFn", {
       service: "manage-photos",
-      environment: { BUCKET_NAME: bucket.bucketName, ...database.env },
+      environment: { BUCKET_NAME: bucket.bucketName, ...database.env, ...cfEnv },
       timeout: cdk.Duration.seconds(29),
     });
     bucket.grantRead(managePhotosFn);
     bucket.grantDelete(managePhotosFn);
     database.grantAccess(managePhotosFn);
+    cdn.privateKeySecret.grantRead(managePhotosFn);
 
     const manageAlbumsFn = this.createFn("ManageAlbumsFn", {
       service: "manage-albums",
-      environment: { BUCKET_NAME: bucket.bucketName, ...database.env },
+      environment: { BUCKET_NAME: bucket.bucketName, ...database.env, ...cfEnv },
       timeout: cdk.Duration.seconds(29),
     });
     bucket.grantRead(manageAlbumsFn);
     database.grantAccess(manageAlbumsFn);
+    cdn.privateKeySecret.grantRead(manageAlbumsFn);
 
     const requestRestoreFn = this.createFn("RequestRestoreFn", {
       service: "request-restore",

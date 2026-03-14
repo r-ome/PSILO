@@ -7,6 +7,7 @@ import {
   GetObjectCommand,
 } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
+import { getPrivateKey, cfSignedUrl } from "../../shared/cloudfront";
 import { eq, desc, sql, and, or, lt, inArray, isNull, isNotNull } from "drizzle-orm";
 import { createDb } from "../../shared/db";
 import { photos, retrievalBatches } from "../../shared/schema";
@@ -161,23 +162,24 @@ export const handler = async (
             ).toString("base64")
           : null;
 
+      const USE_CF = process.env.USE_CLOUDFRONT === "true";
+      const privateKey = USE_CF ? await getPrivateKey() : null;
+      const signUrl = async (key: string) =>
+        USE_CF
+          ? cfSignedUrl(key, privateKey!)
+          : getSignedUrl(s3, new GetObjectCommand({ Bucket: BUCKET_NAME, Key: key }), { expiresIn: 3600 });
+
       const photosWithUrls = await Promise.all(
         resultPhotos.map(async (photo) => {
           if (photo.contentType?.startsWith("video/")) {
             const [signedUrl, thumbnailUrl, previewUrl] = await Promise.all([
-              getSignedUrl(s3, new GetObjectCommand({ Bucket: BUCKET_NAME, Key: photo.s3Key }), { expiresIn: 3600 }),
-              photo.thumbnailKey ? getSignedUrl(s3, new GetObjectCommand({ Bucket: BUCKET_NAME, Key: photo.thumbnailKey }), { expiresIn: 3600 }) : null,
-              photo.previewKey ? getSignedUrl(s3, new GetObjectCommand({ Bucket: BUCKET_NAME, Key: photo.previewKey }), { expiresIn: 3600 }) : null,
+              signUrl(photo.s3Key),
+              photo.thumbnailKey ? signUrl(photo.thumbnailKey) : null,
+              photo.previewKey ? signUrl(photo.previewKey) : null,
             ]);
             return { ...photo, signedUrl, thumbnailUrl, previewUrl };
           } else {
-            const thumbnailUrl = photo.thumbnailKey
-              ? await getSignedUrl(
-                  s3,
-                  new GetObjectCommand({ Bucket: BUCKET_NAME, Key: photo.thumbnailKey }),
-                  { expiresIn: 3600 },
-                )
-              : null;
+            const thumbnailUrl = photo.thumbnailKey ? await signUrl(photo.thumbnailKey) : null;
             return { ...photo, thumbnailUrl };
           }
         }),
@@ -249,23 +251,24 @@ export const handler = async (
           ).toString("base64")
         : null;
 
+    const USE_CF = process.env.USE_CLOUDFRONT === "true";
+    const privateKey = USE_CF ? await getPrivateKey() : null;
+    const signUrl = async (key: string) =>
+      USE_CF
+        ? cfSignedUrl(key, privateKey!)
+        : getSignedUrl(s3, new GetObjectCommand({ Bucket: BUCKET_NAME, Key: key }), { expiresIn: 3600 });
+
     const photosWithUrls = await Promise.all(
       resultPhotos.map(async (photo) => {
         if (photo.contentType?.startsWith("video/")) {
           const [signedUrl, thumbnailUrl, previewUrl] = await Promise.all([
-            getSignedUrl(s3, new GetObjectCommand({ Bucket: BUCKET_NAME, Key: photo.s3Key }), { expiresIn: 3600 }),
-            photo.thumbnailKey ? getSignedUrl(s3, new GetObjectCommand({ Bucket: BUCKET_NAME, Key: photo.thumbnailKey }), { expiresIn: 3600 }) : null,
-            photo.previewKey ? getSignedUrl(s3, new GetObjectCommand({ Bucket: BUCKET_NAME, Key: photo.previewKey }), { expiresIn: 3600 }) : null,
+            signUrl(photo.s3Key),
+            photo.thumbnailKey ? signUrl(photo.thumbnailKey) : null,
+            photo.previewKey ? signUrl(photo.previewKey) : null,
           ]);
           return { ...photo, signedUrl, thumbnailUrl, previewUrl };
         } else {
-          const thumbnailUrl = photo.thumbnailKey
-            ? await getSignedUrl(
-                s3,
-                new GetObjectCommand({ Bucket: BUCKET_NAME, Key: photo.thumbnailKey }),
-                { expiresIn: 3600 },
-              )
-            : null;
+          const thumbnailUrl = photo.thumbnailKey ? await signUrl(photo.thumbnailKey) : null;
           return { ...photo, thumbnailUrl };
         }
       }),

@@ -15,13 +15,18 @@ const mockUpdateSetWhere = jest.fn().mockResolvedValue([]);
 const mockUpdateSet = jest.fn(() => ({ where: mockUpdateSetWhere }));
 const mockUpdate = jest.fn(() => ({ set: mockUpdateSet }));
 
-const mockOrderBy = jest.fn().mockResolvedValue([]);
+const mockLimit = jest.fn().mockResolvedValue([]);
+const mockOrderBy = jest.fn(function() {
+  const result = Promise.resolve([]) as any;
+  result.limit = mockLimit;
+  return result;
+});
 const mockSelectWhere = jest.fn().mockResolvedValue([]);
 // mockWhereForCover needs to return { orderBy } but also be thenable for other routes
 const mockWhereForCover = jest.fn(function() {
   // Return both orderBy and make it awaitable as a Promise
-  const result = Promise.resolve([]);
-  (result as any).orderBy = mockOrderBy;
+  const result = Promise.resolve([]) as any;
+  result.orderBy = mockOrderBy;
   return result;
 });
 const mockInnerJoin = jest.fn(() => ({ where: mockWhereForCover }));
@@ -48,14 +53,22 @@ jest.mock('../../shared/schema', () => ({
 jest.mock('drizzle-orm', () => ({
   eq: jest.fn((col, val) => ({ col, val })),
   and: jest.fn((...args) => ({ and: args })),
+  or: jest.fn((...args) => ({ or: args })),
+  lt: jest.fn((col, val) => ({ col, val })),
+  sql: jest.fn((strings, ...values) => ({ sql: strings, values })),
   inArray: jest.fn((col, vals) => ({ inArray: { col, vals } })),
   desc: jest.fn((col) => ({ desc: col })),
   isNotNull: jest.fn((col) => ({ isNotNull: col })),
   isNull: jest.fn((col) => ({ isNull: col })),
 }));
 
+jest.mock('../../shared/cloudfront', () => ({
+  getPrivateKey: jest.fn().mockResolvedValue('fake-private-key'),
+  cfSignedUrl: jest.fn().mockResolvedValue('https://xxx.cloudfront.net/signed-url'),
+}));
+
 jest.mock('@aws-sdk/s3-request-presigner', () => ({
-  getSignedUrl: jest.fn().mockResolvedValue('https://example.com/signed-url'),
+  getSignedUrl: jest.fn(),
 }));
 
 function makeEvent(
@@ -84,6 +97,7 @@ async function callHandler(event: APIGatewayProxyEventV2WithJWTAuthorizer) {
 }
 
 beforeEach(() => {
+  process.env.USE_CLOUDFRONT = 'true';
   mockInsert.mockClear();
   mockInsertValues.mockClear();
   mockReturning.mockClear().mockResolvedValue([{ id: 'a1', name: 'My Album', userId: 'u1' }]);
@@ -97,10 +111,15 @@ beforeEach(() => {
   mockFrom.mockClear();
   mockSelectWhere.mockClear().mockResolvedValue([]);
   mockInnerJoin.mockClear();
-  mockOrderBy.mockClear().mockResolvedValue([]);
+  mockLimit.mockClear().mockResolvedValue([]);
+  mockOrderBy.mockClear().mockImplementation(function() {
+    const result = Promise.resolve([]) as any;
+    result.limit = mockLimit;
+    return result;
+  });
   mockWhereForCover.mockClear().mockImplementation(function() {
-    const result = Promise.resolve([]);
-    (result as any).orderBy = mockOrderBy;
+    const result = Promise.resolve([]) as any;
+    result.orderBy = mockOrderBy;
     return result;
   });
 });
@@ -152,7 +171,7 @@ describe('manage-albums handler', () => {
 
       expect(result.statusCode).toBe(200);
       const body = JSON.parse(result.body as string);
-      expect(body[0].coverUrl).toBe('https://example.com/signed-url');
+      expect(body[0].coverUrl).toBe('https://xxx.cloudfront.net/signed-url');
     });
   });
 
@@ -171,12 +190,8 @@ describe('manage-albums handler', () => {
       const album = { id: 'a1', name: 'Test', userId: 'u1' };
       // First .where() in GET /albums/{albumId} to fetch album
       mockSelectWhere.mockResolvedValueOnce([album]);
-      // Second query uses innerJoin with mockWhereForCover
-      mockWhereForCover.mockImplementationOnce(function() {
-        const result = Promise.resolve([{ photo: { id: 'p1', filename: 'pic.jpg' } }]) as any;
-        result.orderBy = mockOrderBy;
-        return result;
-      });
+      // .orderBy().limit() chain provides the paginated photos
+      mockLimit.mockResolvedValueOnce([{ photo: { id: 'p1', filename: 'pic.jpg', contentType: 'image/jpeg', thumbnailKey: null } }]);
 
       const result = await callHandler(
         makeEvent('GET', 'GET /albums/{albumId}', 'u1', { albumId: 'a1' }),

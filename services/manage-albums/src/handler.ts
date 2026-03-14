@@ -1,6 +1,7 @@
 import { APIGatewayProxyEventV2WithJWTAuthorizer, APIGatewayProxyResultV2 } from 'aws-lambda';
 import { S3Client, GetObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
+import { getPrivateKey, cfSignedUrl } from '../../shared/cloudfront';
 import { eq, and, inArray, desc, isNotNull, isNull, or, lt, sql } from 'drizzle-orm';
 import { createDb } from '../../shared/db';
 import { albums, albumPhotos, photos } from '../../shared/schema';
@@ -63,16 +64,18 @@ export const handler = async (
       )
       .orderBy(desc(albumPhotos.addedAt));
 
-    // Pick first (most recent) per album, generate presigned URL once per album
+    // Pick first (most recent) per album, generate signed URL once per album
+    const USE_CF = process.env.USE_CLOUDFRONT === "true";
+    const privateKey = USE_CF ? await getPrivateKey() : null;
+    const signUrl = async (key: string) =>
+      USE_CF
+        ? cfSignedUrl(key, privateKey!)
+        : getSignedUrl(s3, new GetObjectCommand({ Bucket: BUCKET_NAME, Key: key }), { expiresIn: 3600 });
+
     const coverMap = new Map<string, string>();
     for (const row of coverRows) {
       if (!coverMap.has(row.albumId) && row.thumbnailKey) {
-        const url = await getSignedUrl(
-          s3,
-          new GetObjectCommand({ Bucket: BUCKET_NAME, Key: row.thumbnailKey }),
-          { expiresIn: 3600 },
-        );
-        coverMap.set(row.albumId, url);
+        coverMap.set(row.albumId, await signUrl(row.thumbnailKey));
       }
     }
 
@@ -144,31 +147,25 @@ export const handler = async (
         ? Buffer.from(JSON.stringify({ sortDate: sortDateStr, id: lastPhoto.id })).toString('base64')
         : null;
 
+    const USE_CF_ALBUM = process.env.USE_CLOUDFRONT === "true";
+    const privateKeyAlbum = USE_CF_ALBUM ? await getPrivateKey() : null;
+    const signUrlAlbum = async (key: string) =>
+      USE_CF_ALBUM
+        ? cfSignedUrl(key, privateKeyAlbum!)
+        : getSignedUrl(s3, new GetObjectCommand({ Bucket: BUCKET_NAME, Key: key }), { expiresIn: 3600 });
+
     const photosWithUrls = await Promise.all(
       resultPhotos.map(async ({ photo }) => {
         if (photo.contentType?.startsWith("video/")) {
           const [signedUrl, thumbnailUrl, previewUrl] = await Promise.all([
-            getSignedUrl(s3, new GetObjectCommand({ Bucket: BUCKET_NAME, Key: photo.s3Key }), { expiresIn: 3600 }),
-            photo.thumbnailKey ? getSignedUrl(s3, new GetObjectCommand({ Bucket: BUCKET_NAME, Key: photo.thumbnailKey }), { expiresIn: 3600 }) : null,
-            photo.previewKey ? getSignedUrl(s3, new GetObjectCommand({ Bucket: BUCKET_NAME, Key: photo.previewKey }), { expiresIn: 3600 }) : null,
+            signUrlAlbum(photo.s3Key),
+            photo.thumbnailKey ? signUrlAlbum(photo.thumbnailKey) : null,
+            photo.previewKey ? signUrlAlbum(photo.previewKey) : null,
           ]);
           return { ...photo, signedUrl, thumbnailUrl, previewUrl };
         } else {
-          // For photos, return only thumbnail URL
-          const thumbnailUrl = photo.thumbnailKey
-            ? await getSignedUrl(
-                s3,
-                new GetObjectCommand({
-                  Bucket: BUCKET_NAME,
-                  Key: photo.thumbnailKey,
-                }),
-                { expiresIn: 3600 },
-              )
-            : null;
-          return {
-            ...photo,
-            thumbnailUrl,
-          };
+          const thumbnailUrl = photo.thumbnailKey ? await signUrlAlbum(photo.thumbnailKey) : null;
+          return { ...photo, thumbnailUrl };
         }
       }),
     );

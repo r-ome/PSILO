@@ -7,6 +7,7 @@ import { AuthConstruct } from "./constructs/auth";
 import { UploadPipelineConstruct } from "./constructs/upload-pipeline";
 import { VideoPipelineConstruct } from "./constructs/video-pipeline";
 import { ApiConstruct } from "./constructs/api";
+import { CdnConstruct } from "./constructs/cdn";
 
 export class PsiloStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
@@ -29,13 +30,21 @@ export class PsiloStack extends cdk.Stack {
       videoPipeline,
     });
 
+    const cdn = new CdnConstruct(this, "Cdn", {
+      bucket: storage.bucket,
+      publicKeyPem: env.CLOUDFRONT_PUBLIC_KEY_PEM,
+      privateKeySecretArn: env.CLOUDFRONT_PRIVATE_KEY_SECRET_ARN,
+    });
+
     const api = new ApiConstruct(this, "Api", {
       bucket: storage.bucket,
       database,
       auth,
+      cdn,
     });
 
     // Stack outputs
+    new cdk.CfnOutput(this, "CloudFrontDomain", { value: cdn.cloudfrontDomain });
     new cdk.CfnOutput(this, "HttpApiUrl",       { value: api.httpApi.url! });
     new cdk.CfnOutput(this, "UserPoolId",       { value: auth.userPool.userPoolId });
     new cdk.CfnOutput(this, "UserPoolClientId", { value: auth.userPoolClient.userPoolClientId });

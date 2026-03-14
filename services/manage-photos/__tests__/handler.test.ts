@@ -40,9 +40,15 @@ jest.mock('drizzle-orm', () => ({
   isNotNull: jest.fn((col) => ({ isNotNull: col })),
 }));
 
-const mockGetSignedUrl = jest.fn();
+const mockCfSignedUrl = jest.fn();
+const mockGetPrivateKey = jest.fn().mockResolvedValue('fake-private-key');
+jest.mock('../../shared/cloudfront', () => ({
+  getPrivateKey: mockGetPrivateKey,
+  cfSignedUrl: mockCfSignedUrl,
+}));
+
 jest.mock('@aws-sdk/s3-request-presigner', () => ({
-  getSignedUrl: mockGetSignedUrl,
+  getSignedUrl: jest.fn(),
 }));
 
 function makeEvent(
@@ -84,7 +90,9 @@ beforeEach(() => {
   mockSet.mockClear();
   mockSelectWhere.mockClear();
   mockUpdateWhere.mockClear();
-  mockGetSignedUrl.mockReset().mockResolvedValue('https://s3.example.com/signed-url');
+  mockCfSignedUrl.mockReset().mockResolvedValue('https://xxx.cloudfront.net/signed-url');
+  mockGetPrivateKey.mockReset().mockResolvedValue('fake-private-key');
+  process.env.USE_CLOUDFRONT = 'true';
 });
 
 describe('manage-photos handler', () => {
@@ -99,12 +107,12 @@ describe('manage-photos handler', () => {
       const body = JSON.parse(result.body as string);
       expect(body).toEqual({
         photos: [
-          { ...photos[0], thumbnailUrl: 'https://s3.example.com/signed-url' },
+          { ...photos[0], thumbnailUrl: 'https://xxx.cloudfront.net/signed-url' },
         ],
         nextCursor: null,
       });
       expect(mockSelect).toHaveBeenCalledTimes(1);
-      expect(mockGetSignedUrl).toHaveBeenCalledTimes(1); // only for thumbnailKey
+      expect(mockCfSignedUrl).toHaveBeenCalledTimes(1); // only for thumbnailKey
     });
 
     it('returns nextCursor when more rows exist', async () => {
@@ -140,7 +148,7 @@ describe('manage-photos handler', () => {
       expect(result.statusCode).toBe(200);
       const body = JSON.parse(result.body as string);
       expect(body.photos[0].thumbnailUrl).toBeNull();
-      expect(mockGetSignedUrl).not.toHaveBeenCalled(); // no signed URL needed
+      expect(mockCfSignedUrl).not.toHaveBeenCalled(); // no signed URL needed
     });
 
     it('returns signedUrl for videos (actual object, no thumbnails yet)', async () => {
@@ -151,9 +159,9 @@ describe('manage-photos handler', () => {
 
       expect(result.statusCode).toBe(200);
       const body = JSON.parse(result.body as string);
-      expect(body.photos[0].signedUrl).toBe('https://s3.example.com/signed-url'); // signed URL for actual video
+      expect(body.photos[0].signedUrl).toBe('https://xxx.cloudfront.net/signed-url'); // signed URL for actual video
       expect(body.photos[0].thumbnailUrl).toBeNull(); // no thumbnail for videos
-      expect(mockGetSignedUrl).toHaveBeenCalledTimes(1); // once for video s3Key
+      expect(mockCfSignedUrl).toHaveBeenCalledTimes(1); // once for video s3Key
     });
   });
 
@@ -168,12 +176,12 @@ describe('manage-photos handler', () => {
       const body = JSON.parse(result.body as string);
       expect(body).toEqual({
         photos: [
-          { ...photos[0], thumbnailUrl: 'https://s3.example.com/signed-url' },
+          { ...photos[0], thumbnailUrl: 'https://xxx.cloudfront.net/signed-url' },
         ],
         nextCursor: null,
       });
       expect(mockSelect).toHaveBeenCalledTimes(1);
-      expect(mockGetSignedUrl).toHaveBeenCalledTimes(1); // only for thumbnailKey
+      expect(mockCfSignedUrl).toHaveBeenCalledTimes(1); // only for thumbnailKey
     });
 
     it('returns empty array when no deleted photos exist', async () => {

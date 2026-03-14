@@ -42,6 +42,9 @@ jobs:
           docker push $ECR_URI:latest
 
       - name: Install & Deploy
+        env:
+          CLOUDFRONT_PUBLIC_KEY_PEM: ${{ secrets.CLOUDFRONT_PUBLIC_KEY_PEM }}
+          CLOUDFRONT_PRIVATE_KEY_SECRET_ARN: ${{ secrets.CLOUDFRONT_PRIVATE_KEY_SECRET_ARN }}
         run: |
           cd services && npm ci
           cd ../infrastructure && npm ci
